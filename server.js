@@ -46,34 +46,46 @@ function parseMovieInfo(filename) {
 }
 
 async function fetchAutoSubtitle(filename) {
-  const apiKey = process.env.OPENSUBTITLES_API_KEY;
-  if (!apiKey) { console.log("[sub-auto] no OPENSUBTITLES_API_KEY set, skipping"); return null; }
+  const apiKey = process.env.SUBDL_API_KEY;
+  if (!apiKey) { console.log("[sub-auto] no SUBDL_API_KEY set, skipping"); return null; }
 
   const { title, year } = parseMovieInfo(filename);
   if (!title) return null;
-  console.log(`[sub-auto] searching: "${title}" (${year || "?"})`);
+  console.log(`[sub-auto] searching subdl: "${title}" (${year || "?"})`);
 
   try {
-    const params = new URLSearchParams({ query: title, languages: "en", type: "movie" });
+    const params = new URLSearchParams({ api_key: apiKey, film_name: title, languages: "EN", type: "movie" });
     if (year) params.set("year", year);
-    const headers = { "Api-Key": apiKey, "Content-Type": "application/json", "User-Agent": "stream-party v1" };
 
-    const searchRes = await fetch(`https://api.opensubtitles.com/api/v1/subtitles?${params}`, { headers });
+    const searchRes = await fetch(`https://api.subdl.com/api/v1/subtitles?${params}`);
     const searchData = await searchRes.json();
-    const fileId = searchData.data?.[0]?.attributes?.files?.[0]?.file_id;
-    if (!fileId) { console.log("[sub-auto] no results"); return null; }
 
-    const dlRes = await fetch("https://api.opensubtitles.com/api/v1/download", {
-      method: "POST", headers,
-      body: JSON.stringify({ file_id: fileId })
-    });
-    const dlData = await dlRes.json();
-    if (!dlData.link) { console.log("[sub-auto] no download link:", JSON.stringify(dlData)); return null; }
+    if (!searchData.status || !searchData.subtitles?.length) {
+      console.log("[sub-auto] no results from subdl");
+      return null;
+    }
 
-    const subRes = await fetch(dlData.link);
-    const text = await subRes.text();
-    const vtt = text.trimStart().startsWith("WEBVTT") ? text : srtToVtt(text);
-    console.log(`[sub-auto] fetched subtitle: ${dlData.file_name} (${text.length} bytes)`);
+    // Prefer full-season or synced subs, take first available
+    const sub = searchData.subtitles.find(s => s.language === "EN") || searchData.subtitles[0];
+    if (!sub?.url) { console.log("[sub-auto] no download URL in result"); return null; }
+
+    // subdl returns a zip archive
+    const zipUrl = `https://dl.subdl.com${sub.url}`;
+    console.log(`[sub-auto] downloading zip: ${zipUrl}`);
+    const zipRes = await fetch(zipUrl);
+    if (!zipRes.ok) { console.log("[sub-auto] zip download failed:", zipRes.status); return null; }
+
+    const zipBuffer = Buffer.from(await zipRes.arrayBuffer());
+    const zip = new AdmZip(zipBuffer);
+    const entries = zip.getEntries();
+
+    // Pick the first SRT file in the archive
+    const srtEntry = entries.find(e => e.entryName.toLowerCase().endsWith(".srt"));
+    if (!srtEntry) { console.log("[sub-auto] no .srt found inside zip"); return null; }
+
+    const srtContent = srtEntry.getData().toString("utf8");
+    const vtt = srtToVtt(srtContent);
+    console.log(`[sub-auto] fetched "${srtEntry.entryName}" (${srtContent.length} bytes)`);
     return vtt;
   } catch(e) {
     console.log("[sub-auto] error:", e.message);
