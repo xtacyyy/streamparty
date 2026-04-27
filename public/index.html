@@ -164,7 +164,7 @@
 <div class="main">
   <div class="player-area">
     <div class="video-wrapper">
-      <video id="videoEl"></video>
+      <video id="videoEl" playsinline webkit-playsinline x5-playsinline></video>
       <div class="placeholder" id="placeholder">
         <div class="play-ring">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="#5c5878"><polygon points="5 3 19 12 5 21 5 3"/></svg>
@@ -196,6 +196,7 @@
           <option value="-1">💬 Off</option>
         </select>
         <button class="vid-btn" id="subUrlBtn" style="display:none;font-size:12px;" onclick="toggleSubUrlInput()" title="Load subtitles from URL">+ Sub</button>
+        <button class="vid-btn" id="pipBtn" onclick="togglePIP()" title="Picture-in-Picture" style="display:none;">⧉</button>
         <button class="vid-btn" onclick="toggleFullscreen()" title="Fullscreen">&#x26F6;</button>
       </div>
     </div>
