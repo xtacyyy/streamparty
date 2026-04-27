@@ -534,24 +534,26 @@ function toggleMute() { toggleMuteVid(); }
 
 // ── Track Selection ──
 async function loadTracks() {
-  // Poll until server has finished probing
   let attempts = 0;
   const poll = async () => {
     try {
       const t = await fetch('/api/tracks').then(r => r.json());
-      if (t.probing && attempts++ < 10) { setTimeout(poll, 2000); return; }
+      if (t.probing && attempts++ < 15) { setTimeout(poll, 2000); return; }
 
-      // Subtitles
+      // Subtitles from torrent
       const subSel = document.getElementById('subTrack');
       if (t.subtitles && t.subtitles.length > 0) {
         t.subtitles.forEach(s => {
           const opt = document.createElement('option');
           opt.value = s.index;
-          opt.textContent = '💬 ' + (s.title !== `Track ${s.index}` ? s.title : s.lang.toUpperCase());
+          opt.textContent = '💬 ' + s.title;
           subSel.appendChild(opt);
         });
         subSel.style.display = 'inline-block';
       }
+
+      // Always show the "+ Sub" URL button once probing is done
+      document.getElementById('subUrlBtn').style.display = 'inline-block';
 
       // Audio tracks
       const audSel = document.getElementById('audioTrack');
@@ -559,14 +561,44 @@ async function loadTracks() {
         t.audio.forEach((a, i) => {
           const opt = document.createElement('option');
           opt.value = a.index;
-          opt.textContent = '🔊 ' + (a.title !== `Track ${i + 1}` ? a.title : a.lang.toUpperCase());
+          opt.textContent = '🔊 ' + a.title;
           audSel.appendChild(opt);
         });
         audSel.style.display = 'inline-block';
       }
-    } catch(e) {}
+    } catch(e) { console.error('[tracks]', e); }
   };
   poll();
+}
+
+function toggleSubUrlInput() {
+  const row = document.getElementById('subUrlRow');
+  row.style.display = row.style.display === 'none' ? 'flex' : 'none';
+  if (row.style.display === 'flex') document.getElementById('subUrlInput').focus();
+}
+
+async function loadSubFromUrl() {
+  const url = document.getElementById('subUrlInput').value.trim();
+  if (!url) return;
+  const vid = document.getElementById('videoEl');
+  const subSel = document.getElementById('subTrack');
+
+  // Fetch and proxy through server to avoid CORS, or use directly for .vtt
+  try {
+    // Add as a custom option in the selector
+    let opt = document.getElementById('sub-custom');
+    if (!opt) {
+      opt = document.createElement('option');
+      opt.id = 'sub-custom';
+      subSel.appendChild(opt);
+    }
+    opt.value = 'url:' + url;
+    opt.textContent = '💬 Custom';
+    subSel.style.display = 'inline-block';
+    subSel.value = 'url:' + url;
+    selectSubtitle('url:' + url);
+    toggleSubUrlInput();
+  } catch(e) { toast('Failed to load subtitle: ' + e.message); }
 }
 
 function selectSubtitle(streamIndex) {
