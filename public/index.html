@@ -446,6 +446,7 @@ async function loadTorrent(broadcast = true) {
           vid.addEventListener('pause', () => { if (!syncing) wsSend({ type: 'pause', time: vid.currentTime }); });
           vid.addEventListener('seeked', () => { if (!syncing) wsSend({ type: 'seek', time: vid.currentTime }); });
           initVideoControls(vid);
+          loadTracks();
         }
 
         // Don't autoplay — let user press play to keep audio unblocked
