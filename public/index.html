@@ -440,10 +440,12 @@ async function loadTorrent(broadcast = true) {
           vid.addEventListener('seeked', () => { if (!syncing) wsSend({ type: 'seek', time: vid.currentTime }); });
           initVideoControls(vid);
         }
+
+        vid.play().catch(() => {});
       } else if (!videoStarted && !s.ready) {
         setStatus('Fetching torrent metadata...', true);
       }
-    } catch(e) {}
+    } catch(e) { console.error('[poll]', e); }
   }, 2000);
 }
 
@@ -483,12 +485,6 @@ function toggleFullscreen() {
 function onSeek(val) {
   const vid = document.getElementById('videoEl');
   if (vid.duration) vid.currentTime = (val / 1000) * vid.duration;
-}
-
-function fmtTime(s) {
-  if (!s || isNaN(s)) return '0:00';
-  const m = Math.floor(s / 60), ss = Math.floor(s % 60);
-  return `${m}:${String(ss).padStart(2, '0')}`;
 }
 
 function initVideoControls(vid) {
