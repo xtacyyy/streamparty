@@ -8,17 +8,17 @@
   @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;700;800&family=Space+Mono:wght@400;700&display=swap');
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
-    --bg: #0a0a0f; --surface: #111118; --surface2: #1a1a24; --surface3: #22222f;
-    --accent: #7c3aed; --accent2: #a78bfa; --text: #f0eeff; --text2: #9b97b8; --text3: #5c5878;
-    --border: rgba(124,58,237,0.2); --border2: rgba(124,58,237,0.45);
-    --success: #34d399; --danger: #f87171; --warn: #fbbf24;
+    --bg: #fff5f8; --surface: #ffffff; --surface2: #fde8f1; --surface3: #fad0e6;
+    --accent: #d6336c; --accent2: #f06292; --text: #1e0916; --text2: #8b2252; --text3: #c084a0;
+    --border: rgba(214,51,108,0.15); --border2: rgba(214,51,108,0.38);
+    --success: #15803d; --danger: #dc2626; --warn: #b45309;
     --font: 'Syne', sans-serif; --mono: 'Space Mono', monospace; --r: 10px;
   }
   html, body { height: 100%; }
   body { font-family: var(--font); background: var(--bg); color: var(--text); display: flex; flex-direction: column; overflow: hidden; }
 
   .header { display: flex; align-items: center; gap: 12px; padding: 14px 24px; border-bottom: 1px solid var(--border); background: var(--surface); flex-shrink: 0; }
-  .logo { font-size: 20px; font-weight: 800; letter-spacing: -0.5px; background: linear-gradient(135deg, #a78bfa, #c4b5fd); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .logo { font-size: 20px; font-weight: 800; letter-spacing: -0.5px; background: linear-gradient(135deg, #d6336c, #f472b6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
   .logo span { font-weight: 400; font-size: 16px; -webkit-text-fill-color: var(--text3); }
   .room-pill { margin-left: auto; display: flex; align-items: center; gap: 8px; background: var(--surface2); border: 1px solid var(--border); border-radius: 999px; padding: 6px 14px; font-size: 12px; font-family: var(--mono); color: var(--text2); cursor: pointer; transition: border-color 0.2s; user-select: none; }
   .room-pill:hover { border-color: var(--border2); }
