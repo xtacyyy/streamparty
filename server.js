@@ -372,14 +372,74 @@ const server = http.createServer((req, res) => {
     const season = u.searchParams.get("season");
     const episode = u.searchParams.get("episode");
     if (!imdb) { res.writeHead(400); res.end(JSON.stringify({ error: "Missing imdb" })); return; }
-    const url = (type === "series" && season && episode)
-      ? `https://torrentio.strem.fun/stream/series/${imdb}:${season}:${episode}.json`
-      : `https://torrentio.strem.fun/stream/movie/${imdb}.json`;
     (async () => {
-      const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
-      const data = await r.json();
+      const hdrs = { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" };
+      let streams = [];
+
+      if (type === "movie") {
+        // Primary: YTS (never blocks server IPs)
+        try {
+          const yr = await fetch(`https://yts.mx/api/v2/list_movies.json?query_term=${encodeURIComponent(imdb)}&limit=5`, { headers: hdrs });
+          const yd = await yr.json();
+          const movies = (yd.data && yd.data.movies) || [];
+          for (const movie of movies) {
+            for (const t of (movie.torrents || [])) {
+              if (!t.hash) continue;
+              const sizeMB = Math.round((t.size_bytes || 0) / 1024 / 1024);
+              const sizeStr = sizeMB > 1024 ? (sizeMB / 1024).toFixed(1) + " GB" : sizeMB + " MB";
+              streams.push({
+                name: "YTS " + (t.quality || "") + " " + (t.type || ""),
+                title: movie.title + " (" + movie.year + ")\n" + (t.quality || "") + " " + (t.type || "bluray").toUpperCase() + " - " + sizeStr + " - " + (t.seeds || 0) + " seeds",
+                infoHash: t.hash.toLowerCase(),
+                behaviorHints: { filename: movie.title_english.replace(/[^a-zA-Z0-9]/g, ".") + "." + (t.quality || "") + ".BluRay.YTS.MX.mp4" }
+              });
+            }
+          }
+        } catch(e) { /* YTS failed, try torrentio */ }
+
+        // Fallback: Torrentio
+        if (!streams.length) {
+          try {
+            const tr = await fetch(`https://torrentio.strem.fun/stream/movie/${imdb}.json`, { headers: hdrs });
+            const td = await tr.json();
+            streams = td.streams || [];
+          } catch(e) { /* both failed */ }
+        }
+
+      } else {
+        // Series: EZTV primary
+        if (season && episode) {
+          try {
+            const numId = imdb.replace(/^tt0*/, "");
+            const er = await fetch(`https://eztv.re/api/get-torrents?imdb_id=${numId}&limit=100`, { headers: hdrs });
+            const ed = await er.json();
+            const torrents = (ed.torrents || []).filter(t => {
+              return String(t.season) === String(season) && String(t.episode) === String(episode);
+            });
+            streams = torrents.map(t => ({
+              name: "EZTV",
+              title: t.title + "\n" + (t.size_bytes ? (t.size_bytes / 1024 / 1024 / 1024).toFixed(2) + " GB" : ""),
+              infoHash: (t.hash || "").toLowerCase(),
+              behaviorHints: { filename: t.filename || t.title }
+            })).filter(s => s.infoHash);
+          } catch(e) { /* eztv failed */ }
+        }
+
+        // Fallback: Torrentio for series
+        if (!streams.length) {
+          try {
+            const tsUrl = (season && episode)
+              ? `https://torrentio.strem.fun/stream/series/${imdb}:${season}:${episode}.json`
+              : `https://torrentio.strem.fun/stream/series/${imdb}.json`;
+            const tr = await fetch(tsUrl, { headers: hdrs });
+            const td = await tr.json();
+            streams = td.streams || [];
+          } catch(e) { /* both failed */ }
+        }
+      }
+
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify(data.streams || []));
+      res.end(JSON.stringify(streams));
     })().catch(e => { res.writeHead(500); res.end(JSON.stringify({ error: e.message })); });
     return;
   }
