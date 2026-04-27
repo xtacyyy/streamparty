@@ -523,19 +523,13 @@ async function loadTorrent(broadcast = true) {
   document.getElementById('torInfo').style.display = 'none';
   clearInterval(statusInterval);
 
-  try {
-    const res = await fetch('/api/load', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ magnet })
-    });
-    const data = await res.json();
-    if (!res.ok) { setStatus('Error: ' + (data.error || res.status)); toast('Failed: ' + (data.error || res.status)); return; }
-  } catch (e) {
-    setStatus('Error: ' + e.message);
-    toast('Error: ' + e.message);
-    return;
-  }
+  const loadData = await fetchJson('/api/load', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ magnet })
+  });
+  if (!loadData || loadData._empty) { setStatus('Server not ready — retrying...', true); }
+  else if (!loadData._ok) { setStatus('Error: ' + (loadData.error || loadData._status)); toast('Failed: ' + (loadData.error || loadData._status)); return; }
 
   // Poll /api/status until torrent is ready, then start video
   setStatus('Fetching torrent metadata...', true);
@@ -543,7 +537,8 @@ async function loadTorrent(broadcast = true) {
 
   statusInterval = setInterval(async () => {
     try {
-      const s = await fetch('/api/status').then(r => r.json());
+      const s = await fetchJson('/api/status');
+      if (!s || s._empty) return; // server not ready yet, retry next tick
 
       if (s.progress != null) {
         document.getElementById('tiPct').textContent = Math.round(s.progress * 100) + '%';
