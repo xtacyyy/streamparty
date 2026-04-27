@@ -41,9 +41,8 @@ const server = http.createServer((req, res) => {
       if (activeTorrent && !existing) { try { client.remove(activeTorrent.infoHash); } catch (e) {} activeTorrent = null; activeFile = null; }
       console.log("[torrent] loading:", magnet.slice(0, 80));
       let responded = false;
-      const torrent = existing || client.add(magnet, { path: path.join(__dirname, "downloads") });
 
-      const onReady = () => {
+      const onReady = (torrent) => {
         if (responded) return;
         activeTorrent = torrent;
         const file = findVideoFile(torrent);
@@ -65,12 +64,17 @@ const server = http.createServer((req, res) => {
         res.end(JSON.stringify({ ok: true, name: torrent.name, file: file.name, size: file.length, streamUrl: "/stream" }));
       };
 
-      if (existing && torrent.ready) {
-        onReady();
+      const onError = (e) => { if (!responded) { responded = true; res.writeHead(500); res.end(JSON.stringify({ error: e.message })); } };
+      setTimeout(() => { if (!responded) { responded = true; res.writeHead(408); res.end(JSON.stringify({ error: "Timeout getting metadata after 25s" })); } }, 25000);
+
+      if (existing && existing.ready) {
+        onReady(existing);
+      } else if (existing) {
+        existing.once("ready", () => onReady(existing));
+        existing.once("error", onError);
       } else {
-        torrent.once("ready", onReady);
-        torrent.once("error", e => { if (!responded) { responded = true; res.writeHead(500); res.end(JSON.stringify({ error: e.message })); } });
-        setTimeout(() => { if (!responded) { responded = true; res.writeHead(408); res.end(JSON.stringify({ error: "Timeout getting metadata after 30s" })); } }, 30000);
+        client.add(magnet, { path: path.join(__dirname, "downloads") }, onReady);
+        client.once("error", onError);
       }
     });
     return;
