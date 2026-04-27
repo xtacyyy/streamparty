@@ -309,17 +309,18 @@ const server = http.createServer((req, res) => {
       return;
     }
 
-    // iOS / compat mode — repackage as fragmented MP4, copy video, stereo AAC audio
-    // Use the local HTTP stream as input so ffmpeg can make range requests and seek properly
-    if (compatMode || !["mp4", "m4v"].includes(ext)) {
-      console.log(`[compat] remuxing: ${activeFile.name}`);
+    // Non-native formats (MKV, AVI, etc): remux to fragmented MP4 via ffmpeg
+    // MP4/M4V are always served directly — iOS plays H.264 MP4 natively via range requests,
+    // and ffmpeg streaming lacks Content-Length which iOS requires to play/seek.
+    if (!["mp4", "m4v"].includes(ext)) {
+      console.log(`[compat] remuxing ${ext} -> mp4: ${activeFile.name}`);
       res.writeHead(200, { "Content-Type": "video/mp4" });
       const ff = Ffmpeg()
-        .input(`http://localhost:${PORT}/stream`)  // seekable via range requests
+        .input(`http://localhost:${PORT}/stream`)
         .outputOptions([
           "-map 0:v:0", "-map 0:a:0",
-          "-c:v copy",                             // no video re-encode — just repackage
-          "-c:a aac", "-ac 2", "-b:a 192k",        // downmix to stereo AAC for iOS
+          "-c:v copy",
+          "-c:a aac", "-ac 2", "-b:a 192k",
           "-f mp4", "-movflags frag_keyframe+empty_moov+default_base_moof"
         ])
         .on("error", e => { console.error("[compat remux]", e.message); try { res.end(); } catch(_) {} })
