@@ -360,6 +360,20 @@ function connectWS(id) {
       vid.currentTime = msg.time;
       sysMsg(`${msg.sender} jumped to ${fmtTime(msg.time)}`);
       setTimeout(() => syncing = false, 500);
+    } else if (msg.type === 'subtitle') {
+      const subSel = document.getElementById('subTrack');
+      const trackId = msg.trackId;
+      // Add custom URL option if needed
+      if (String(trackId).startsWith('url:')) {
+        let opt = document.getElementById('sub-custom');
+        if (!opt) { opt = document.createElement('option'); opt.id = 'sub-custom'; subSel.appendChild(opt); }
+        opt.value = trackId;
+        opt.textContent = '💬 Custom';
+        subSel.style.display = 'inline-block';
+      }
+      subSel.value = trackId;
+      selectSubtitle(trackId, false);
+      sysMsg(`${msg.sender} ${trackId === '-1' ? 'turned off subtitles' : 'turned on subtitles'}`);
     }
   };
 
