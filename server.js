@@ -11,6 +11,11 @@ const client = new WebTorrent();
 let activeTorrent = null;
 let activeFile = null;
 
+function infoHashFromMagnet(magnet) {
+  const m = magnet.match(/xt=urn:btih:([a-fA-F0-9]{40}|[a-zA-Z2-7]{32})/i);
+  return m ? m[1].toLowerCase() : null;
+}
+
 const VIDEO_EXTS = ["mp4", "mkv", "webm", "avi", "mov", "m4v", "ogv", "ogg", "ts"];
 const rooms = {};
 
