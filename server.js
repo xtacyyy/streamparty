@@ -201,7 +201,15 @@ const server = http.createServer((req, res) => {
 
   if (req.method === "GET" && u.pathname === "/api/tracks") {
     res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify(activeTrackInfo || { subtitles: [], audio: [], probing: !!activeFile }));
+    const trackData = activeTrackInfo || { subtitles: [], audio: [], probing: !!activeFile };
+    res.end(JSON.stringify({ ...trackData, hasAutoSub: !!autoSubContent }));
+    return;
+  }
+
+  if (req.method === "GET" && u.pathname === "/subtitle/auto") {
+    if (!autoSubContent) { res.writeHead(404); res.end("No auto subtitle available"); return; }
+    res.writeHead(200, { "Content-Type": "text/vtt; charset=utf-8", "Access-Control-Allow-Origin": "*" });
+    res.end(autoSubContent);
     return;
   }
 
