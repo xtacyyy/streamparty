@@ -128,6 +128,7 @@ const server = http.createServer((req, res) => {
         activeFile = null;
         activeTrackInfo = null;
         activeSubtitleFiles = [];
+        autoSubContent = null;
       }
       console.log("[torrent] loading:", magnet.slice(0, 80));
 
@@ -157,6 +158,9 @@ const server = http.createServer((req, res) => {
         const criticalEnd = Math.max(10, Math.floor(pieceCount * 0.1));
         try { torrent.critical(0, criticalEnd); } catch(e) {}
         console.log("[torrent] ready:", file.name, "| pieces:", pieceCount, "| critical: 0-" + criticalEnd);
+
+        // Auto-fetch subtitle from OpenSubtitles
+        fetchAutoSubtitle(file.name).then(vtt => { autoSubContent = vtt; });
 
         // Build external subtitle track list immediately
         const externalSubs = activeSubtitleFiles.map((f, i) => ({
