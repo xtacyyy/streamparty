@@ -605,13 +605,21 @@ function selectSubtitle(streamIndex) {
   const vid = document.getElementById('videoEl');
   Array.from(vid.querySelectorAll('track')).forEach(t => t.remove());
   if (streamIndex === '-1') return;
+
   const track = document.createElement('track');
   track.kind = 'subtitles';
-  track.src = `/subtitle/${streamIndex}?t=${Date.now()}`;
   track.default = true;
+
+  if (String(streamIndex).startsWith('url:')) {
+    track.src = streamIndex.replace('url:', '');
+  } else {
+    track.src = `/subtitle/${streamIndex}?t=${Date.now()}`;
+  }
+
   vid.appendChild(track);
-  // Force showing after load
-  track.addEventListener('load', () => { if (vid.textTracks[0]) vid.textTracks[0].mode = 'showing'; });
+  track.addEventListener('load', () => {
+    for (const t of vid.textTracks) { t.mode = t === vid.textTracks[0] ? 'showing' : 'disabled'; }
+  });
 }
 
 function selectAudio(streamIndex) {
