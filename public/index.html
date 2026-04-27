@@ -64,8 +64,12 @@
 
   .chat-area { display: flex; flex-direction: column; background: var(--surface); min-height: 0; overflow: hidden; }
   .chat-hdr { padding: 13px 18px; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text3); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-  .avatars { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 14px; border-bottom: 1px solid var(--border); flex-shrink: 0; min-height: 48px; align-items: center; }
-  .av { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #fff; flex-shrink: 0; }
+  .avatars { display: flex; flex-direction: column; gap: 0; padding: 0; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .avatars-hdr { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text3); padding: 8px 14px 6px; }
+  .avatars-list { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 14px 10px; align-items: center; min-height: 36px; }
+  .av { display: flex; align-items: center; gap: 6px; background: var(--surface2); border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px 3px 4px; flex-shrink: 0; }
+  .av-dot { width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #fff; flex-shrink: 0; }
+  .av-name { font-size: 11px; font-weight: 700; color: var(--text2); font-family: var(--font); }
   .messages { flex: 1; overflow-y: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
   .messages::-webkit-scrollbar { width: 4px; }
   .messages::-webkit-scrollbar-thumb { background: var(--surface3); border-radius: 4px; }
