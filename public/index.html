@@ -235,6 +235,7 @@ function fmtBytes(b) {
 }
 
 function fmtTime(s) {
+  if (!s || isNaN(s)) return '0:00';
   const m = Math.floor(s/60), ss = Math.floor(s%60);
   return `${m}:${String(ss).padStart(2,'0')}`;
 }
