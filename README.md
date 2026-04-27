@@ -1,26 +1,28 @@
-# stream.party
+# 🎬 stream.party
 
-Watch torrents together in real time. Server-side torrent streaming + synchronized playback for everyone in the room.
+Watch torrents together, in real time, from anywhere. Drop a magnet link, share the room, and you're all watching the same frame at the same moment — play, pause, seek, it all syncs instantly. Oh, and there's a chat sidebar because obviously.
 
-## Deploy on Railway (free)
+No accounts. No installs. Just vibes.
 
-1. Go to https://railway.app and sign up
+---
+
+## 🚀 Deploy on Render (free tier)
+
+1. Go to [render.com](https://render.com) and sign up
+2. Click **New** → **Web Service** → connect your GitHub repo
+3. Build command: `npm install`
+4. Start command: `node server.js`
+5. Hit **Create Web Service** and grab your URL
+6. Send it to your friends and start watching
+
+## 🚂 Deploy on Railway (also free)
+
+1. Go to [railway.app](https://railway.app) and sign up
 2. Click **New Project** → **Deploy from GitHub repo**
-3. Push this folder to a GitHub repo first, then select it
-4. Railway auto-detects Node.js and runs `npm start`
-5. Click **Generate Domain** to get your public URL
-6. Share that URL with friends — everyone opens it and watches in sync
+3. Select your repo — Railway auto-detects Node and runs `npm start`
+4. Click **Generate Domain**, share the link, done
 
-## Deploy on Render (free)
-
-1. Go to https://render.com and sign up
-2. Click **New** → **Web Service**
-3. Connect your GitHub repo
-4. Build command: `npm install`
-5. Start command: `node server.js`
-6. Click **Create Web Service**
-
-## Run locally
+## 💻 Run locally
 
 ```bash
 npm install
@@ -28,15 +30,13 @@ node server.js
 # Open http://localhost:3000
 ```
 
+---
+
 ## How it works
 
-- You paste a magnet link — the **server** downloads the torrent (full UDP tracker support, finds all peers)
-- The server streams the video to your browser over HTTP with range requests (like Netflix)
-- WebSocket keeps everyone in the room in sync — play/pause/seek broadcasts instantly
-- Chat sidebar for the party
+- You paste a magnet link (or a `.torrent` URL) — the **server** handles all the downloading, peer discovery, the whole thing
+- Video is streamed to your browser over HTTP with range requests, just like a real streaming service
+- A WebSocket keeps everyone in the room perfectly in sync — play, pause, seek, it all broadcasts instantly to the whole party
+- Built-in chat sidebar for the running commentary
 
-## Notes
-
-- Only one torrent active at a time per server instance
-- For private use — if you want multiple rooms with different torrents simultaneously, you'd need separate deployments
-- Downloaded files are stored in `downloads/` temporarily
+## A few thing
