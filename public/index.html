@@ -611,7 +611,7 @@ async function loadSubFromUrl() {
     opt.textContent = '💬 Custom';
     subSel.style.display = 'inline-block';
     subSel.value = 'url:' + url;
-    selectSubtitle('url:' + url);
+    selectSubtitle('url:' + url, true);
     toggleSubUrlInput();
   } catch(e) { toast('Failed to load subtitle: ' + e.message); }
 }
