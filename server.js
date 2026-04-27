@@ -17,7 +17,11 @@ Ffmpeg.setFfprobePath(ffprobeStatic.path);
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
-const client = new WebTorrent({ utp: false });
+const client = new WebTorrent({
+  utp: false,   // disable utp-native
+  wrtc: false,  // disable node-datachannel (WebRTC) — prevents segfault on Render
+  tracker: { wrtc: false }
+});
 let activeTorrent = null;
 let activeFile = null;
 let activeTrackInfo = null;
