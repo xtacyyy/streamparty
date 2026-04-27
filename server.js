@@ -388,6 +388,9 @@ wss.on("connection", (ws) => {
       ws._name = msg.name || "Viewer";
       rooms[msg.roomId].add(ws);
       broadcast(msg.roomId, ws, JSON.stringify({ type: "joined", sender: ws._name }));
+      // Send the new joiner the list of people already in the room
+      const existing = [...rooms[msg.roomId]].filter(c => c !== ws).map(c => c._name);
+      if (existing.length > 0) ws.send(JSON.stringify({ type: "room_members", members: existing }));
       console.log(`[room] ${ws._name} joined ${msg.roomId} (${rooms[msg.roomId].size} total)`);
       return;
     }
