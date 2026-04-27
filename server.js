@@ -10,6 +10,7 @@ const require = createRequire(import.meta.url);
 const ffmpegPath = require("ffmpeg-static");
 const ffprobeStatic = require("ffprobe-static");
 const Ffmpeg = require("fluent-ffmpeg");
+const AdmZip = require("adm-zip");
 Ffmpeg.setFfmpegPath(ffmpegPath);
 Ffmpeg.setFfprobePath(ffprobeStatic.path);
 
