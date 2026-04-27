@@ -158,6 +158,24 @@ const server = http.createServer((req, res) => {
 
   if (req.method === "GET" && u.pathname === "/stream") {
     if (!activeFile) { res.writeHead(404); res.end("No active stream"); return; }
+
+    // Audio track remux via ffmpeg
+    const audioParam = u.searchParams.get("audio");
+    if (audioParam !== null) {
+      const audioIdx = parseInt(audioParam);
+      const ext = activeFile.name.split(".").pop().toLowerCase();
+      const inputFormat = ext === "mkv" ? "matroska" : ext;
+      res.writeHead(200, { "Content-Type": "video/mp4" });
+      const ff = Ffmpeg()
+        .input(activeFile.createReadStream())
+        .inputFormat(inputFormat)
+        .outputOptions(["-map 0:v:0", `-map 0:a:${audioIdx}`, "-c:v copy", "-c:a aac", "-b:a 192k", "-f mp4", "-movflags frag_keyframe+empty_moov"])
+        .on("error", e => { console.error("[audio remux]", e.message); try { res.end(); } catch(_) {} })
+        .pipe(res, { end: true });
+      req.on("close", () => { try { ff.kill("SIGKILL"); } catch(_) {} });
+      return;
+    }
+
     const fileSize = activeFile.length;
     const ext = activeFile.name.split(".").pop().toLowerCase();
     const mimeTypes = { mp4: "video/mp4", webm: "video/webm", mkv: "video/x-matroska", avi: "video/x-msvideo", mov: "video/quicktime", ogv: "video/ogg", ogg: "video/ogg", ts: "video/mp2t", m4v: "video/mp4" };
