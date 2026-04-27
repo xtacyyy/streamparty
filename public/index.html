@@ -567,12 +567,26 @@ function toggleFullscreen() {
   const wrapper = document.querySelector('.video-wrapper');
   const vid = document.getElementById('videoEl');
   if (isIOS) {
-    // iOS only supports fullscreen on the video element itself
     if (vid.webkitEnterFullscreen) vid.webkitEnterFullscreen();
     return;
   }
   if (!document.fullscreenElement) wrapper.requestFullscreen().catch(()=>{});
   else document.exitFullscreen();
+}
+
+function togglePIP() {
+  const vid = document.getElementById('videoEl');
+  // iOS Safari
+  if (vid.webkitSupportsPresentationMode && vid.webkitSupportsPresentationMode('picture-in-picture')) {
+    const mode = vid.webkitPresentationMode === 'picture-in-picture' ? 'inline' : 'picture-in-picture';
+    vid.webkitSetPresentationMode(mode);
+    return;
+  }
+  // Desktop Chrome/Edge/Firefox
+  if (document.pictureInPictureEnabled) {
+    if (document.pictureInPictureElement) document.exitPictureInPicture().catch(()=>{});
+    else vid.requestPictureInPicture().catch(()=>{});
+  }
 }
 
 function onSeek(val) {
