@@ -42,7 +42,17 @@ const server = http.createServer((req, res) => {
       let magnet;
       try { magnet = JSON.parse(body).magnet; } catch (e) { res.writeHead(400); res.end(JSON.stringify({ error: "Invalid JSON" })); return; }
       if (!magnet) { res.writeHead(400); res.end(JSON.stringify({ error: "Missing magnet" })); return; }
-      // Always remove any previous torrent and add fresh
+      // If the same torrent is already active, don't disrupt it
+      const newHash = infoHashFromMagnet(magnet);
+      const curHash = activeTorrent?.infoHash?.toLowerCase();
+      if (newHash && curHash && newHash === curHash) {
+        console.log("[torrent] already active, skipping reload");
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true, loading: !activeFile }));
+        return;
+      }
+
+      // Different torrent — remove previous and add fresh
       if (activeTorrent) {
         try { client.remove(activeTorrent.infoHash); } catch (e) {}
         activeTorrent = null;
