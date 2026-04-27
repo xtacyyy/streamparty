@@ -446,6 +446,7 @@ async function loadTorrent(broadcast = true) {
           vid.addEventListener('play', () => { if (!syncing) wsSend({ type: 'play', time: vid.currentTime }); });
           vid.addEventListener('pause', () => { if (!syncing) wsSend({ type: 'pause', time: vid.currentTime }); });
           vid.addEventListener('seeked', () => { if (!syncing) wsSend({ type: 'seek', time: vid.currentTime }); });
+          initVideoControls(vid);
         }
       } else if (!videoStarted && !s.ready) {
         setStatus('Fetching torrent metadata...', true);
