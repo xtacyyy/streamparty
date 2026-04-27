@@ -505,6 +505,7 @@ function initVideoControls(vid) {
   const controls = document.getElementById('vidControls');
   controls.classList.add('visible');
   document.getElementById('playBtn').textContent = '▶';
+  document.getElementById('subUrlBtn').style.display = 'inline-block';
 
   vid.addEventListener('play', () => { document.getElementById('playBtn').textContent = '⏸'; });
   vid.addEventListener('pause', () => { document.getElementById('playBtn').textContent = '▶'; });
