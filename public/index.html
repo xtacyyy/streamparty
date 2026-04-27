@@ -8,17 +8,17 @@
   @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;700;800&family=Space+Mono:wght@400;700&display=swap');
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
-    --bg: #fff5f8; --surface: #ffffff; --surface2: #fde8f1; --surface3: #fad0e6;
-    --accent: #d6336c; --accent2: #f06292; --text: #1e0916; --text2: #8b2252; --text3: #c084a0;
-    --border: rgba(214,51,108,0.15); --border2: rgba(214,51,108,0.38);
-    --success: #15803d; --danger: #dc2626; --warn: #b45309;
+    --bg: #0a0a0f; --surface: #111118; --surface2: #1a1a24; --surface3: #22222f;
+    --accent: #7c3aed; --accent2: #a78bfa; --text: #f0eeff; --text2: #9b97b8; --text3: #5c5878;
+    --border: rgba(124,58,237,0.2); --border2: rgba(124,58,237,0.45);
+    --success: #34d399; --danger: #f87171; --warn: #fbbf24;
     --font: 'Syne', sans-serif; --mono: 'Space Mono', monospace; --r: 10px;
   }
   html, body { height: 100%; }
   body { font-family: var(--font); background: var(--bg); color: var(--text); display: flex; flex-direction: column; overflow: hidden; }
 
   .header { display: flex; align-items: center; gap: 12px; padding: 14px 24px; border-bottom: 1px solid var(--border); background: var(--surface); flex-shrink: 0; }
-  .logo { font-size: 20px; font-weight: 800; letter-spacing: -0.5px; background: linear-gradient(135deg, #d6336c, #f472b6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .logo { font-size: 20px; font-weight: 800; letter-spacing: -0.5px; background: linear-gradient(135deg, #a78bfa, #c4b5fd); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
   .logo span { font-weight: 400; font-size: 16px; -webkit-text-fill-color: var(--text3); }
   .room-pill { margin-left: auto; display: flex; align-items: center; gap: 8px; background: var(--surface2); border: 1px solid var(--border); border-radius: 999px; padding: 6px 14px; font-size: 12px; font-family: var(--mono); color: var(--text2); cursor: pointer; transition: border-color 0.2s; user-select: none; }
   .room-pill:hover { border-color: var(--border2); }
@@ -33,7 +33,7 @@
   .video-wrapper { background: #000; flex: 1; position: relative; display: flex; align-items: center; justify-content: center; min-height: 0; }
   #videoEl { width: 100%; height: 100%; object-fit: contain; display: none; }
   .placeholder { display: flex; flex-direction: column; align-items: center; gap: 14px; color: var(--text3); text-align: center; padding: 40px; }
-  .play-ring { width: 60px; height: 60px; border-radius: 50%; border: 2px solid var(--surface3); display: flex; align-items: center; justify-content: center; }
+  .play-ring { width: 60px; height: 60px; border-radius: 50%; border: 2px solid #2a2a3a; display: flex; align-items: center; justify-content: center; }
 
   .status-strip { background: var(--surface2); border-top: 1px solid var(--border); padding: 8px 20px; display: flex; align-items: center; gap: 12px; font-size: 12px; font-family: var(--mono); color: var(--text3); flex-shrink: 0; }
   .spinner { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--text3); border-top-color: var(--accent2); animation: spin 0.8s linear infinite; display: none; flex-shrink: 0; }
@@ -64,18 +64,11 @@
 
   .chat-area { display: flex; flex-direction: column; background: var(--surface); min-height: 0; overflow: hidden; }
   .chat-hdr { padding: 13px 18px; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text3); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-  .avatars { display: flex; flex-direction: column; gap: 0; padding: 0; border-bottom: 1px solid var(--border); flex-shrink: 0; }
-  .avatars-hdr { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text3); padding: 8px 14px 6px; }
-  .avatars-list { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 14px 10px; align-items: center; min-height: 36px; }
-  .av { display: flex; align-items: center; gap: 6px; background: var(--surface2); border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px 3px 4px; flex-shrink: 0; }
-  .av-dot { width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #fff; flex-shrink: 0; }
-  .av-name { font-size: 11px; font-weight: 700; color: var(--text2); font-family: var(--font); }
+  .avatars { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 14px; border-bottom: 1px solid var(--border); flex-shrink: 0; min-height: 48px; align-items: center; }
+  .av { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #fff; flex-shrink: 0; }
   .messages { flex: 1; overflow-y: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
   .messages::-webkit-scrollbar { width: 4px; }
   .messages::-webkit-scrollbar-thumb { background: var(--surface3); border-radius: 4px; }
-  ::-webkit-scrollbar { width: 6px; }
-  ::-webkit-scrollbar-track { background: var(--surface2); }
-  ::-webkit-scrollbar-thumb { background: var(--surface3); border-radius: 4px; }
   .msg { display: flex; flex-direction: column; gap: 2px; }
   .msg-meta { font-size: 11px; font-family: var(--mono); color: var(--text3); }
   .msg-meta .name { color: var(--accent2); margin-right: 6px; }
@@ -171,13 +164,13 @@
 <div class="main">
   <div class="player-area">
     <div class="video-wrapper">
-      <video id="videoEl" playsinline webkit-playsinline x5-playsinline></video>
+      <video id="videoEl"></video>
       <div class="placeholder" id="placeholder">
         <div class="play-ring">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="#c084a0"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="#5c5878"><polygon points="5 3 19 12 5 21 5 3"/></svg>
         </div>
-        <div style="font-size:15px;font-weight:700;color:var(--text2);">Paste a magnet link below</div>
-        <div style="font-size:12px;color:var(--text3);line-height:1.7;max-width:260px;">Create a room, share the ID with friends, and everyone watches in perfect sync.</div>
+        <div style="font-size:15px;font-weight:700;color:#9b97b8;">Paste a magnet link below</div>
+        <div style="font-size:12px;color:#5c5878;line-height:1.7;max-width:260px;">Create a room, share the ID with friends, and everyone watches in perfect sync.</div>
       </div>
     </div>
 
@@ -203,7 +196,6 @@
           <option value="-1">💬 Off</option>
         </select>
         <button class="vid-btn" id="subUrlBtn" style="display:none;font-size:12px;" onclick="toggleSubUrlInput()" title="Load subtitles from URL">+ Sub</button>
-        <button class="vid-btn" id="pipBtn" onclick="togglePIP()" title="Picture-in-Picture" style="display:none;">⧉</button>
         <button class="vid-btn" onclick="toggleFullscreen()" title="Fullscreen">&#x26F6;</button>
       </div>
     </div>
@@ -250,10 +242,7 @@
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
       Party Chat
     </div>
-    <div class="avatars" id="avatarsWrap">
-      <div class="avatars-hdr">In this room</div>
-      <div class="avatars-list" id="avatars"></div>
-    </div>
+    <div class="avatars" id="avatars"></div>
     <div class="messages" id="messages">
       <div class="msg sys"><div class="msg-body">Welcome! Paste a magnet link and create a room to watch with friends.</div></div>
     </div>
@@ -293,21 +282,6 @@ function getColor(str) {
   let h = 0;
   for (const c of str) h = (h * 31 + c.charCodeAt(0)) >>> 0;
   return AV_COLORS[h % AV_COLORS.length];
-}
-
-// Safe fetch → JSON: returns null on empty body or network error instead of throwing
-async function fetchJson(url, opts) {
-  try {
-    const res = await fetch(url, opts);
-    const text = await res.text();
-    if (!text || !text.trim()) return { _empty: true, ok: res.ok, status: res.status };
-    const data = JSON.parse(text);
-    data._ok = res.ok;
-    data._status = res.status;
-    return data;
-  } catch(e) {
-    return null;
-  }
 }
 
 function toast(msg, dur = 3200) {
@@ -360,21 +334,13 @@ function chatMsg(sender, text) {
 function updateAvatars() {
   const box = document.getElementById('avatars');
   box.innerHTML = '';
-  const me = getName();
-  const all = [me, ...members];
-  all.forEach((name, i) => {
+  const all = [getName(), ...members];
+  all.forEach(name => {
     const av = document.createElement('div');
     av.className = 'av';
     av.title = name;
-    const dot = document.createElement('div');
-    dot.className = 'av-dot';
-    dot.style.background = getColor(name);
-    dot.textContent = name.slice(0,2).toUpperCase();
-    const label = document.createElement('div');
-    label.className = 'av-name';
-    label.textContent = i === 0 ? name + ' (you)' : name;
-    av.appendChild(dot);
-    av.appendChild(label);
+    av.style.background = getColor(name);
+    av.textContent = name.slice(0,2).toUpperCase();
     box.appendChild(av);
   });
 }
@@ -418,12 +384,6 @@ function connectWS(id) {
     try { msg = JSON.parse(e.data); } catch { return; }
     const vid = document.getElementById('videoEl');
 
-    if (msg.type === 'room_members') {
-      // Existing members already in the room when we joined
-      msg.members.forEach(name => { if (!members.includes(name)) members.push(name); });
-      updateRoomUI();
-      return;
-    }
     if (msg.type === 'joined') {
       members.push(msg.sender);
       sysMsg(`<strong style="color:var(--accent2)">${msg.sender}</strong> joined 🎉`);
@@ -485,16 +445,8 @@ function wsSend(data) {
   }
 }
 
-const WORDS_A = ['amber','breezy','calm','cherry','cloudy','cozy','crisp','crystal','daisy','dewy','dreamy','dusty','fluffy','foggy','frosted','gentle','gilded','golden','happy','hazy','hidden','honey','jolly','kind','lavender','lazy','leafy','lemon','lilac','lovely','lucky','lunar','maple','misty','mossy','muted','mystic','noble','opal','peachy','perky','petal','piney','polar','pretty','quiet','rainy','rosy','rustic','sage','sandy','serene','shiny','silky','silver','sleepy','snowy','solar','starry','stormy','sunny','sweet','tiny','velvet','warm','wispy','witty'];
-const WORDS_B = ['apple','aurora','berry','blossom','brook','cedar','clover','coral','creek','crystal','dove','dream','dune','dusk','fawn','feather','fern','flame','flower','flute','forest','fox','gale','garden','gem','glade','grove','harbor','heart','hill','iris','ivy','jewel','lake','lark','leaf','lily','lotus','luna','maple','meadow','mist','moon','moss','nest','oak','ocean','petal','pond','prism','quartz','rain','ray','reef','river','rose','shell','sky','snow','song','star','stone','stream','sun','tide','tulip','vale','wave','willow','wind','wood'];
-function wordRoomId() {
-  const a = WORDS_A[Math.floor(Math.random() * WORDS_A.length)];
-  const b = WORDS_B[Math.floor(Math.random() * WORDS_B.length)];
-  return `${a}-${b}`;
-}
-
 function createRoom() {
-  roomId = wordRoomId();
+  roomId = Math.random().toString(36).slice(2, 10);
   members = [];
   connectWS(roomId);
   updateRoomUI();
@@ -523,13 +475,19 @@ async function loadTorrent(broadcast = true) {
   document.getElementById('torInfo').style.display = 'none';
   clearInterval(statusInterval);
 
-  const loadData = await fetchJson('/api/load', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ magnet })
-  });
-  if (!loadData || loadData._empty) { setStatus('Server not ready — retrying...', true); }
-  else if (!loadData._ok) { setStatus('Error: ' + (loadData.error || loadData._status)); toast('Failed: ' + (loadData.error || loadData._status)); return; }
+  try {
+    const res = await fetch('/api/load', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ magnet })
+    });
+    const data = await res.json();
+    if (!res.ok) { setStatus('Error: ' + (data.error || res.status)); toast('Failed: ' + (data.error || res.status)); return; }
+  } catch (e) {
+    setStatus('Error: ' + e.message);
+    toast('Error: ' + e.message);
+    return;
+  }
 
   // Poll /api/status until torrent is ready, then start video
   setStatus('Fetching torrent metadata...', true);
@@ -537,8 +495,7 @@ async function loadTorrent(broadcast = true) {
 
   statusInterval = setInterval(async () => {
     try {
-      const s = await fetchJson('/api/status');
-      if (!s || s._empty) return; // server not ready yet, retry next tick
+      const s = await fetch('/api/status').then(r => r.json());
 
       if (s.progress != null) {
         document.getElementById('tiPct').textContent = Math.round(s.progress * 100) + '%';
@@ -609,26 +566,12 @@ function toggleFullscreen() {
   const wrapper = document.querySelector('.video-wrapper');
   const vid = document.getElementById('videoEl');
   if (isIOS) {
+    // iOS only supports fullscreen on the video element itself
     if (vid.webkitEnterFullscreen) vid.webkitEnterFullscreen();
     return;
   }
   if (!document.fullscreenElement) wrapper.requestFullscreen().catch(()=>{});
   else document.exitFullscreen();
-}
-
-function togglePIP() {
-  const vid = document.getElementById('videoEl');
-  // iOS Safari
-  if (vid.webkitSupportsPresentationMode && vid.webkitSupportsPresentationMode('picture-in-picture')) {
-    const mode = vid.webkitPresentationMode === 'picture-in-picture' ? 'inline' : 'picture-in-picture';
-    vid.webkitSetPresentationMode(mode);
-    return;
-  }
-  // Desktop Chrome/Edge/Firefox
-  if (document.pictureInPictureEnabled) {
-    if (document.pictureInPictureElement) document.exitPictureInPicture().catch(()=>{});
-    else vid.requestPictureInPicture().catch(()=>{});
-  }
 }
 
 function onSeek(val) {
@@ -641,11 +584,6 @@ function initVideoControls(vid) {
   controls.classList.add('visible');
   document.getElementById('playBtn').textContent = '▶';
   document.getElementById('subUrlBtn').style.display = 'inline-block';
-
-  // Show PIP button if supported (desktop Chrome/Safari or iOS Safari)
-  const pipSupported = document.pictureInPictureEnabled ||
-    (vid.webkitSupportsPresentationMode && vid.webkitSupportsPresentationMode('picture-in-picture'));
-  if (pipSupported) document.getElementById('pipBtn').style.display = 'inline-block';
 
   vid.addEventListener('play', () => { document.getElementById('playBtn').textContent = '⏸'; });
   vid.addEventListener('pause', () => { document.getElementById('playBtn').textContent = '▶'; });
@@ -684,8 +622,7 @@ async function loadTracks() {
   // Phase 1: wait for ffprobe, then populate track dropdowns
   const pollTracks = async () => {
     try {
-      const t = await fetchJson('/api/tracks');
-      if (!t || t._empty) { setTimeout(pollTracks, 2000); return; }
+      const t = await fetch('/api/tracks').then(r => r.json());
       if (t.probing && probeAttempts++ < 20) { setTimeout(pollTracks, 2000); return; }
 
       if (!tracksPopulated) {
@@ -732,8 +669,7 @@ async function loadTracks() {
   const pollAutoSub = async (n) => {
     if (autoSubApplied || n > 30) return;
     try {
-      const t = await fetchJson('/api/tracks');
-      if (!t || t._empty) { setTimeout(() => pollAutoSub(n), 3000); return; }
+      const t = await fetch('/api/tracks').then(r => r.json());
       if (t.hasAutoSub && !autoSubApplied) {
         applyAutoSub();
       } else if (!autoSubApplied) {

@@ -16,11 +16,7 @@ Ffmpeg.setFfprobePath(ffprobeStatic.path);
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
-const client = new WebTorrent({
-  utp: false,   // disable utp-native
-  wrtc: false,  // disable node-datachannel (WebRTC) — prevents segfault on Render
-  tracker: { wrtc: false }
-});
+const client = new WebTorrent();
 let activeTorrent = null;
 let activeFile = null;
 let activeTrackInfo = null;
@@ -170,12 +166,10 @@ const server = http.createServer((req, res) => {
           if (f === file || activeSubtitleFiles.includes(f)) return;
           f.deselect();
         });
-        try { torrent.strategy = "sequential"; } catch(e) {}
-        const pieceCount = torrent.pieces ? torrent.pieces.length : 0;
-        if (pieceCount > 0) {
-          const criticalEnd = Math.max(10, Math.floor(pieceCount * 0.1));
-          try { torrent.critical(0, criticalEnd); } catch(e) {}
-        }
+        torrent.strategy = "sequential";
+        const pieceCount = torrent.pieces.length;
+        const criticalEnd = Math.max(10, Math.floor(pieceCount * 0.1));
+        try { torrent.critical(0, criticalEnd); } catch(e) {}
         console.log("[torrent] ready:", file.name, "| pieces:", pieceCount, "| critical: 0-" + criticalEnd);
 
         // Auto-fetch subtitle from OpenSubtitles
@@ -315,18 +309,17 @@ const server = http.createServer((req, res) => {
       return;
     }
 
-    // Non-native formats (MKV, AVI, etc): remux to fragmented MP4 via ffmpeg
-    // MP4/M4V are always served directly — iOS plays H.264 MP4 natively via range requests,
-    // and ffmpeg streaming lacks Content-Length which iOS requires to play/seek.
-    if (!["mp4", "m4v"].includes(ext)) {
-      console.log(`[compat] remuxing ${ext} -> mp4: ${activeFile.name}`);
+    // iOS / compat mode — repackage as fragmented MP4, copy video, stereo AAC audio
+    // Use the local HTTP stream as input so ffmpeg can make range requests and seek properly
+    if (compatMode || !["mp4", "m4v"].includes(ext)) {
+      console.log(`[compat] remuxing: ${activeFile.name}`);
       res.writeHead(200, { "Content-Type": "video/mp4" });
       const ff = Ffmpeg()
-        .input(`http://localhost:${PORT}/stream`)
+        .input(`http://localhost:${PORT}/stream`)  // seekable via range requests
         .outputOptions([
           "-map 0:v:0", "-map 0:a:0",
-          "-c:v copy",
-          "-c:a aac", "-ac 2", "-b:a 192k",
+          "-c:v copy",                             // no video re-encode — just repackage
+          "-c:a aac", "-ac 2", "-b:a 192k",        // downmix to stereo AAC for iOS
           "-f mp4", "-movflags frag_keyframe+empty_moov+default_base_moof"
         ])
         .on("error", e => { console.error("[compat remux]", e.message); try { res.end(); } catch(_) {} })
@@ -346,7 +339,7 @@ const server = http.createServer((req, res) => {
       const end = parts[1] ? parseInt(parts[1], 10) : Math.min(start + 1024 * 1024, fileSize - 1);
       const chunkSize = end - start + 1;
       // Mark requested area as critical so it downloads immediately
-      if (activeTorrent && activeTorrent.pieceLength) {
+      if (activeTorrent) {
         const pieceLen = activeTorrent.pieceLength;
         const startPiece = Math.floor(start / pieceLen);
         const endPiece = Math.floor(end / pieceLen);
@@ -394,9 +387,6 @@ wss.on("connection", (ws) => {
       ws._name = msg.name || "Viewer";
       rooms[msg.roomId].add(ws);
       broadcast(msg.roomId, ws, JSON.stringify({ type: "joined", sender: ws._name }));
-      // Send the new joiner the list of people already in the room
-      const existing = [...rooms[msg.roomId]].filter(c => c !== ws).map(c => c._name);
-      if (existing.length > 0) ws.send(JSON.stringify({ type: "room_members", members: existing }));
       console.log(`[room] ${ws._name} joined ${msg.roomId} (${rooms[msg.roomId].size} total)`);
       return;
     }
