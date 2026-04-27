@@ -505,6 +505,14 @@ function initVideoControls(vid) {
     document.getElementById('volBar').value = Math.round(v * 100);
     document.getElementById('volBtn').textContent = volIcon(v);
   });
+  vid.addEventListener('error', () => {
+    const code = vid.error ? vid.error.code : '?';
+    const msg = code === 3 || code === 4
+      ? 'This browser cannot decode this video format (try Chrome). Error: ' + vid.error?.message
+      : 'Video error: ' + (vid.error?.message || 'unknown');
+    setStatus(msg);
+    toast(msg, 6000);
+  });
 }
 
 // Keep old panel volume control working too
