@@ -167,10 +167,12 @@ const server = http.createServer((req, res) => {
           if (f === file || activeSubtitleFiles.includes(f)) return;
           f.deselect();
         });
-        torrent.strategy = "sequential";
-        const pieceCount = torrent.pieces.length;
-        const criticalEnd = Math.max(10, Math.floor(pieceCount * 0.1));
-        try { torrent.critical(0, criticalEnd); } catch(e) {}
+        try { torrent.strategy = "sequential"; } catch(e) {}
+        const pieceCount = torrent.pieces ? torrent.pieces.length : 0;
+        if (pieceCount > 0) {
+          const criticalEnd = Math.max(10, Math.floor(pieceCount * 0.1));
+          try { torrent.critical(0, criticalEnd); } catch(e) {}
+        }
         console.log("[torrent] ready:", file.name, "| pieces:", pieceCount, "| critical: 0-" + criticalEnd);
 
         // Auto-fetch subtitle from OpenSubtitles
@@ -341,7 +343,7 @@ const server = http.createServer((req, res) => {
       const end = parts[1] ? parseInt(parts[1], 10) : Math.min(start + 1024 * 1024, fileSize - 1);
       const chunkSize = end - start + 1;
       // Mark requested area as critical so it downloads immediately
-      if (activeTorrent) {
+      if (activeTorrent && activeTorrent.pieceLength) {
         const pieceLen = activeTorrent.pieceLength;
         const startPiece = Math.floor(start / pieceLen);
         const endPiece = Math.floor(end / pieceLen);
