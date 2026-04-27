@@ -37,11 +37,13 @@ const server = http.createServer((req, res) => {
       let magnet;
       try { magnet = JSON.parse(body).magnet; } catch (e) { res.writeHead(400); res.end(JSON.stringify({ error: "Invalid JSON" })); return; }
       if (!magnet) { res.writeHead(400); res.end(JSON.stringify({ error: "Missing magnet" })); return; }
-      if (activeTorrent) { try { client.remove(activeTorrent.infoHash); } catch (e) {} activeTorrent = null; activeFile = null; }
+      const existing = client.get(magnet);
+      if (activeTorrent && !existing) { try { client.remove(activeTorrent.infoHash); } catch (e) {} activeTorrent = null; activeFile = null; }
       console.log("[torrent] loading:", magnet.slice(0, 80));
       let responded = false;
-      const torrent = client.add(magnet, { path: path.join(__dirname, "downloads") });
-      torrent.once("ready", () => {
+      const torrent = existing || client.add(magnet, { path: path.join(__dirname, "downloads") });
+
+      const onReady = () => {
         if (responded) return;
         activeTorrent = torrent;
         const file = findVideoFile(torrent);
@@ -52,11 +54,8 @@ const server = http.createServer((req, res) => {
           return;
         }
         activeFile = file;
-        // Focus all bandwidth on the video file
         torrent.files.forEach(f => f === file ? f.select() : f.deselect());
-        // Sequential download so beginning of file arrives first
         torrent.strategy = "sequential";
-        // Mark first 10% as critical so they download immediately
         const pieceCount = torrent.pieces.length;
         const criticalEnd = Math.max(10, Math.floor(pieceCount * 0.1));
         try { torrent.critical(0, criticalEnd); } catch(e) {}
@@ -64,9 +63,15 @@ const server = http.createServer((req, res) => {
         responded = true;
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true, name: torrent.name, file: file.name, size: file.length, streamUrl: "/stream" }));
-      });
-      torrent.once("error", e => { if (!responded) { responded = true; res.writeHead(500); res.end(JSON.stringify({ error: e.message })); } });
-      setTimeout(() => { if (!responded) { responded = true; res.writeHead(408); res.end(JSON.stringify({ error: "Timeout getting metadata after 30s" })); } }, 30000);
+      };
+
+      if (existing && torrent.ready) {
+        onReady();
+      } else {
+        torrent.once("ready", onReady);
+        torrent.once("error", e => { if (!responded) { responded = true; res.writeHead(500); res.end(JSON.stringify({ error: e.message })); } });
+        setTimeout(() => { if (!responded) { responded = true; res.writeHead(408); res.end(JSON.stringify({ error: "Timeout getting metadata after 30s" })); } }, 30000);
+      }
     });
     return;
   }
