@@ -586,6 +586,11 @@ function initVideoControls(vid) {
   document.getElementById('playBtn').textContent = '▶';
   document.getElementById('subUrlBtn').style.display = 'inline-block';
 
+  // Show PIP button if supported (desktop Chrome/Safari or iOS Safari)
+  const pipSupported = document.pictureInPictureEnabled ||
+    (vid.webkitSupportsPresentationMode && vid.webkitSupportsPresentationMode('picture-in-picture'));
+  if (pipSupported) document.getElementById('pipBtn').style.display = 'inline-block';
+
   vid.addEventListener('play', () => { document.getElementById('playBtn').textContent = '⏸'; });
   vid.addEventListener('pause', () => { document.getElementById('playBtn').textContent = '▶'; });
   vid.addEventListener('timeupdate', () => {
