@@ -684,7 +684,8 @@ async function loadTracks() {
   // Phase 1: wait for ffprobe, then populate track dropdowns
   const pollTracks = async () => {
     try {
-      const t = await fetch('/api/tracks').then(r => r.json());
+      const t = await fetchJson('/api/tracks');
+      if (!t || t._empty) { setTimeout(pollTracks, 2000); return; }
       if (t.probing && probeAttempts++ < 20) { setTimeout(pollTracks, 2000); return; }
 
       if (!tracksPopulated) {
