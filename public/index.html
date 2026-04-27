@@ -602,9 +602,12 @@ async function loadSubFromUrl() {
   } catch(e) { toast('Failed to load subtitle: ' + e.message); }
 }
 
-function selectSubtitle(streamIndex) {
+function selectSubtitle(streamIndex, broadcast = true) {
   const vid = document.getElementById('videoEl');
   Array.from(vid.querySelectorAll('track')).forEach(t => t.remove());
+
+  if (broadcast) wsSend({ type: 'subtitle', trackId: streamIndex });
+
   if (streamIndex === '-1') return;
 
   const track = document.createElement('track');
