@@ -3,11 +3,10 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath, URL as NodeURL } from "url";
 import { createRequire } from "module";
+import WebTorrent from "webtorrent";
 import { WebSocketServer } from "ws";
 
-// All CJS modules loaded via require (webtorrent 1.x is CJS)
 const require = createRequire(import.meta.url);
-const WebTorrent = require("webtorrent");
 const ffmpegPath = require("ffmpeg-static");
 const ffprobeStatic = require("ffprobe-static");
 const Ffmpeg = require("fluent-ffmpeg");
