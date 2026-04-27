@@ -37,10 +37,13 @@ const server = http.createServer((req, res) => {
       let magnet;
       try { magnet = JSON.parse(body).magnet; } catch (e) { res.writeHead(400); res.end(JSON.stringify({ error: "Invalid JSON" })); return; }
       if (!magnet) { res.writeHead(400); res.end(JSON.stringify({ error: "Missing magnet" })); return; }
-      const existing = client.get(magnet);
-      if (activeTorrent && !existing) { try { client.remove(activeTorrent.infoHash); } catch (e) {} activeTorrent = null; activeFile = null; }
+      // Always remove any previous torrent and add fresh
+      if (activeTorrent) {
+        try { client.remove(activeTorrent.infoHash); } catch (e) {}
+        activeTorrent = null;
+        activeFile = null;
+      }
       console.log("[torrent] loading:", magnet.slice(0, 80));
-      let responded = false;
 
       const setupTorrent = (torrent) => {
         activeTorrent = torrent;
@@ -55,14 +58,8 @@ const server = http.createServer((req, res) => {
         console.log("[torrent] ready:", file.name, "| pieces:", pieceCount, "| critical: 0-" + criticalEnd);
       };
 
-      if (existing && existing.ready) {
-        setupTorrent(existing);
-      } else if (existing) {
-        existing.once("ready", () => setupTorrent(existing));
-      } else {
-        client.add(magnet, { path: path.join(__dirname, "downloads") }, setupTorrent);
-        client.once("error", e => console.error("[torrent] error:", e.message));
-      }
+      client.add(magnet, { path: path.join(__dirname, "downloads") }, setupTorrent);
+      client.once("error", e => console.error("[torrent] error:", e.message));
 
       // Return immediately — frontend polls /api/status for readiness
       res.writeHead(200, { "Content-Type": "application/json" });
