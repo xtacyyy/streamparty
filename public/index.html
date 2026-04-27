@@ -124,6 +124,11 @@
     </div>
 
     <div class="vid-controls" id="vidControls">
+      <div id="subUrlRow" style="display:none;gap:6px;align-items:center;" class="vid-seek-row">
+        <input type="text" id="subUrlInput" placeholder="Paste .srt or .vtt URL..." style="flex:1;font-size:12px;padding:5px 10px;" />
+        <button class="vid-btn" onclick="loadSubFromUrl()" style="font-size:12px;background:var(--accent);color:#fff;padding:5px 12px;">Load</button>
+        <button class="vid-btn" onclick="toggleSubUrlInput()" style="font-size:12px;">✕</button>
+      </div>
       <div class="vid-seek-row">
         <input type="range" id="seekBar" min="0" max="1000" value="0" oninput="onSeek(this.value)" style="flex:1;" />
         <span id="vidTime" class="vid-time">0:00 / 0:00</span>
