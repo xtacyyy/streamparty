@@ -75,6 +75,8 @@ const server = http.createServer((req, res) => {
         try { client.remove(activeTorrent.infoHash); } catch (e) {}
         activeTorrent = null;
         activeFile = null;
+        activeTrackInfo = null;
+        activeSubtitleFiles = [];
       }
       console.log("[torrent] loading:", magnet.slice(0, 80));
 
@@ -148,12 +150,37 @@ const server = http.createServer((req, res) => {
   }
 
   if (req.method === "GET" && u.pathname.startsWith("/subtitle/")) {
-    const idx = parseInt(u.pathname.split("/")[2]);
-    if (!activeFile || isNaN(idx)) { res.writeHead(404); res.end("Not found"); return; }
-    const ext = activeFile.name.split(".").pop().toLowerCase();
-    const inputFormat = ext === "mkv" ? "matroska" : ext;
+    const trackId = u.pathname.split("/")[2];
+    if (!activeFile) { res.writeHead(404); res.end("Not found"); return; }
+
     res.setHeader("Content-Type", "text/vtt; charset=utf-8");
     res.setHeader("Access-Control-Allow-Origin", "*");
+
+    // External subtitle file (ext:N)
+    if (trackId.startsWith("ext:")) {
+      const extIdx = parseInt(trackId.replace("ext:", ""));
+      const subFile = activeSubtitleFiles[extIdx];
+      if (!subFile) { res.writeHead(404); res.end("Subtitle file not found"); return; }
+      res.writeHead(200);
+      const fileExt = subFile.name.split(".").pop().toLowerCase();
+      if (fileExt === "vtt") {
+        subFile.createReadStream().pipe(res);
+      } else {
+        // SRT/ASS → read fully then convert
+        let buf = "";
+        const stream = subFile.createReadStream();
+        stream.on("data", c => buf += c.toString());
+        stream.on("end", () => res.end(srtToVtt(buf)));
+        stream.on("error", () => res.end("WEBVTT\n\n"));
+      }
+      return;
+    }
+
+    // Embedded subtitle stream (numeric ffmpeg stream index)
+    const idx = parseInt(trackId);
+    if (isNaN(idx)) { res.writeHead(400); res.end("Bad track id"); return; }
+    const videoExt = activeFile.name.split(".").pop().toLowerCase();
+    const inputFormat = videoExt === "mkv" ? "matroska" : videoExt;
     res.writeHead(200);
     const ff = Ffmpeg()
       .input(activeFile.createReadStream())
