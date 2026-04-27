@@ -295,6 +295,21 @@ function getColor(str) {
   return AV_COLORS[h % AV_COLORS.length];
 }
 
+// Safe fetch → JSON: returns null on empty body or network error instead of throwing
+async function fetchJson(url, opts) {
+  try {
+    const res = await fetch(url, opts);
+    const text = await res.text();
+    if (!text || !text.trim()) return { _empty: true, ok: res.ok, status: res.status };
+    const data = JSON.parse(text);
+    data._ok = res.ok;
+    data._status = res.status;
+    return data;
+  } catch(e) {
+    return null;
+  }
+}
+
 function toast(msg, dur = 3200) {
   const el = document.getElementById('toast');
   el.textContent = msg;
