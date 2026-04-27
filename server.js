@@ -19,7 +19,8 @@ const client = new WebTorrent();
 let activeTorrent = null;
 let activeFile = null;
 let activeTrackInfo = null;
-let activeSubtitleFiles = []; // external .srt/.vtt files from torrent
+let activeSubtitleFiles = [];
+let autoSubContent = null;
 
 const SUBTITLE_EXTS = ["srt", "vtt", "ass", "ssa"];
 
