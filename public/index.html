@@ -133,6 +133,10 @@
           <input type="range" id="volBar" min="0" max="100" value="100" oninput="setVolumeVid(this.value)" style="width:70px;" />
         </div>
         <div style="flex:1;"></div>
+        <select id="audioTrack" class="track-sel" style="display:none;" onchange="selectAudio(this.value)" title="Audio track"></select>
+        <select id="subTrack" class="track-sel" style="display:none;" onchange="selectSubtitle(this.value)" title="Subtitles">
+          <option value="-1">💬 Off</option>
+        </select>
         <button class="vid-btn" onclick="toggleFullscreen()" title="Fullscreen">&#x26F6;</button>
       </div>
     </div>
