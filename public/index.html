@@ -454,32 +454,72 @@ async function loadTorrent(broadcast = true) {
   }, 2000);
 }
 
-// ── Volume ──
-function setVolume(val) {
+// ── Custom Video Controls ──
+function volIcon(v) { return v === 0 ? '🔇' : v < 0.5 ? '🔉' : '🔊'; }
+
+function setVolumeVid(val) {
   const vid = document.getElementById('videoEl');
   const v = parseInt(val) / 100;
   vid.volume = v;
   vid.muted = v === 0;
-  document.getElementById('volumeLabel').textContent = val + '%';
-  document.getElementById('muteBtn').textContent = v === 0 ? '🔇' : v < 0.5 ? '🔉' : '🔊';
+  document.getElementById('volBtn').textContent = volIcon(v);
+  // keep panel slider in sync
+  const ps = document.getElementById('volumeSlider');
+  if (ps) { ps.value = val; document.getElementById('volumeLabel').textContent = val + '%'; }
 }
 
-function toggleMute() {
+function toggleMuteVid() {
   const vid = document.getElementById('videoEl');
-  const slider = document.getElementById('volumeSlider');
   vid.muted = !vid.muted;
-  if (vid.muted) {
-    slider.value = 0;
-    document.getElementById('volumeLabel').textContent = '0%';
-    document.getElementById('muteBtn').textContent = '🔇';
-  } else {
-    const v = Math.max(vid.volume, 0.1);
-    vid.volume = v;
-    slider.value = Math.round(v * 100);
-    document.getElementById('volumeLabel').textContent = Math.round(v * 100) + '%';
-    document.getElementById('muteBtn').textContent = v < 0.5 ? '🔉' : '🔊';
-  }
+  const v = vid.muted ? 0 : vid.volume;
+  document.getElementById('volBtn').textContent = volIcon(v);
+  document.getElementById('volBar').value = Math.round(v * 100);
 }
+
+function togglePlay() {
+  const vid = document.getElementById('videoEl');
+  if (vid.paused) vid.play(); else vid.pause();
+}
+
+function toggleFullscreen() {
+  const wrapper = document.querySelector('.video-wrapper');
+  if (!document.fullscreenElement) wrapper.requestFullscreen().catch(()=>{});
+  else document.exitFullscreen();
+}
+
+function onSeek(val) {
+  const vid = document.getElementById('videoEl');
+  if (vid.duration) vid.currentTime = (val / 1000) * vid.duration;
+}
+
+function fmtTime(s) {
+  if (!s || isNaN(s)) return '0:00';
+  const m = Math.floor(s / 60), ss = Math.floor(s % 60);
+  return `${m}:${String(ss).padStart(2, '0')}`;
+}
+
+function initVideoControls(vid) {
+  const controls = document.getElementById('vidControls');
+  controls.classList.add('visible');
+  document.getElementById('playBtn').textContent = '⏸';
+
+  vid.addEventListener('play', () => { document.getElementById('playBtn').textContent = '⏸'; });
+  vid.addEventListener('pause', () => { document.getElementById('playBtn').textContent = '▶'; });
+  vid.addEventListener('timeupdate', () => {
+    if (!vid.duration) return;
+    document.getElementById('seekBar').value = Math.round((vid.currentTime / vid.duration) * 1000);
+    document.getElementById('vidTime').textContent = fmtTime(vid.currentTime) + ' / ' + fmtTime(vid.duration);
+  });
+  vid.addEventListener('volumechange', () => {
+    const v = vid.muted ? 0 : vid.volume;
+    document.getElementById('volBar').value = Math.round(v * 100);
+    document.getElementById('volBtn').textContent = volIcon(v);
+  });
+}
+
+// Keep old panel volume control working too
+function setVolume(val) { setVolumeVid(val); }
+function toggleMute() { toggleMuteVid(); }
 
 // ── Chat ──
 function sendChat() {
