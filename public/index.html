@@ -442,7 +442,7 @@ async function loadTorrent(broadcast = true) {
           initVideoControls(vid);
         }
 
-        vid.play().catch(() => {});
+        // Don't autoplay — let user press play to keep audio unblocked
       } else if (!videoStarted && !s.ready) {
         setStatus('Fetching torrent metadata...', true);
       }
@@ -491,7 +491,7 @@ function onSeek(val) {
 function initVideoControls(vid) {
   const controls = document.getElementById('vidControls');
   controls.classList.add('visible');
-  document.getElementById('playBtn').textContent = '⏸';
+  document.getElementById('playBtn').textContent = '▶';
 
   vid.addEventListener('play', () => { document.getElementById('playBtn').textContent = '⏸'; });
   vid.addEventListener('pause', () => { document.getElementById('playBtn').textContent = '▶'; });
