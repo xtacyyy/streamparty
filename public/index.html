@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>stream.party — Watch Together</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;700;800&family=Space+Mono:wght@400;700&display=swap');
@@ -96,7 +96,58 @@
   .toast { position: fixed; bottom: 24px; right: 24px; background: var(--surface2); border: 1px solid var(--border2); border-radius: var(--r); padding: 11px 16px; font-size: 13px; color: var(--text); z-index: 999; transform: translateY(60px); opacity: 0; transition: all 0.25s cubic-bezier(.34,1.56,.64,1); max-width: 300px; pointer-events: none; }
   .toast.show { transform: translateY(0); opacity: 1; }
 
-  @media (max-width: 680px) { .main { grid-template-columns: 1fr; overflow-y: auto; } body { overflow: auto; } .chat-area { min-height: 350px; } }
+  @media (max-width: 680px) {
+    html, body { height: auto; min-height: 100%; overflow: visible; }
+    body { overflow-y: auto; overflow-x: hidden; }
+
+    .header { padding: 10px 14px; }
+    .logo { font-size: 17px; }
+    .room-pill { padding: 5px 10px; font-size: 11px; gap: 6px; }
+
+    .main {
+      grid-template-columns: 1fr;
+      flex: none;
+      overflow: visible;
+      min-height: unset;
+    }
+
+    /* ── Video: aspect-ratio box so it always has height ── */
+    .player-area { border-right: none; overflow: visible; }
+    .video-wrapper {
+      flex: none;
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      min-height: unset;
+    }
+    #videoEl { width: 100%; height: 100%; }
+
+    /* ── Video controls: bigger touch targets ── */
+    .vid-controls { padding: 6px 10px 8px; gap: 5px; }
+    .vid-btn { font-size: 20px; padding: 8px 10px; min-width: 44px; min-height: 44px; }
+    .vid-btn-row { flex-wrap: wrap; gap: 4px; }
+    .vol-wrap input[type=range] { width: 55px; }
+    .vid-time { font-size: 10px; }
+    .track-sel { font-size: 11px; padding: 4px 6px; max-width: 120px; }
+    input[type=range]::-webkit-slider-thumb { width: 18px; height: 18px; }
+    input[type=range]::-moz-range-thumb { width: 18px; height: 18px; }
+
+    /* ── Status + torrent info ── */
+    .status-strip { font-size: 11px; padding: 6px 12px; }
+    .torrent-info { margin: 0 12px 8px; gap: 10px; }
+
+    /* ── Controls panel ── */
+    .controls-panel { padding: 12px 14px; gap: 10px; }
+    .controls-panel .row { flex-wrap: wrap; }
+    .controls-panel input[type=text],
+    .controls-panel button { min-height: 44px; font-size: 13px; }
+
+    /* ── Chat ── */
+    .chat-area { min-height: 260px; max-height: 380px; border-top: 1px solid var(--border); }
+    .avatars { min-height: 40px; padding: 8px 12px; }
+    .messages { max-height: 160px; }
+    .chat-foot input[type=text] { min-height: 44px; }
+    .chat-foot button { min-height: 44px; }
+  }
 </style>
 </head>
 <body>
