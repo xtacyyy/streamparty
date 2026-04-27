@@ -365,9 +365,10 @@ function updateRoomUI() {
 
 function copyRoomId() {
   if (!roomId) { toast('Create a room first'); return; }
-  navigator.clipboard.writeText(roomId)
-    .then(() => toast('✓ Room ID copied! Share it with friends.'))
-    .catch(() => toast('Room ID: ' + roomId));
+  const link = window.location.origin + '/?room=' + roomId;
+  navigator.clipboard.writeText(link)
+    .then(() => toast('✓ Link copied! Share it with friends.'))
+    .catch(() => toast(link));
 }
 
 // ── WebSocket Room ──
@@ -450,6 +451,7 @@ function createRoom() {
   members = [];
   connectWS(roomId);
   updateRoomUI();
+  history.pushState({}, '', '/?room=' + roomId);
   sysMsg(`Room created! ID: <strong style="color:var(--accent2);font-family:var(--mono)">${roomId}</strong>`);
   copyRoomId();
 }
@@ -461,6 +463,7 @@ function joinRoom() {
   members = [];
   connectWS(roomId);
   updateRoomUI();
+  history.pushState({}, '', '/?room=' + roomId);
   sysMsg(`Joining room <strong style="color:var(--accent2)">${target}</strong>…`);
 }
 
@@ -768,13 +771,4 @@ function selectAudio(streamIndex) {
 function sendChat() {
   const input = document.getElementById('chatInput');
   const text = input.value.trim();
-  if (!text) return;
-  input.value = '';
-  chatMsg(getName(), text);
-  wsSend({ type: 'chat', text });
-}
-
-updateAvatars();
-</script>
-</body>
-</html>
+  if (!text)
