@@ -30,6 +30,56 @@ function srtToVtt(srt) {
     .replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, "$1.$2");
 }
 
+function parseMovieInfo(filename) {
+  const base = filename.replace(/\.[^.]+$/, "");
+  const yearMatch = base.match(/[.\s\[(]((19|20)\d{2})[.\s\])]/);
+  const year = yearMatch ? yearMatch[1] : null;
+  let title = base;
+  if (year) {
+    title = base.substring(0, base.indexOf(year));
+  } else {
+    title = base.replace(/\b(1080p|720p|480p|2160p|4K|BluRay|BRRip|WEBRip|WEB-DL|HDTV|x264|x265|HEVC|AAC|DTS|YTS|YIFY)\b.*/i, "");
+  }
+  title = title.replace(/[.\-_]/g, " ").replace(/\s+/g, " ").trim();
+  return { title, year };
+}
+
+async function fetchAutoSubtitle(filename) {
+  const apiKey = process.env.OPENSUBTITLES_API_KEY;
+  if (!apiKey) { console.log("[sub-auto] no OPENSUBTITLES_API_KEY set, skipping"); return null; }
+
+  const { title, year } = parseMovieInfo(filename);
+  if (!title) return null;
+  console.log(`[sub-auto] searching: "${title}" (${year || "?"})`);
+
+  try {
+    const params = new URLSearchParams({ query: title, languages: "en", type: "movie" });
+    if (year) params.set("year", year);
+    const headers = { "Api-Key": apiKey, "Content-Type": "application/json", "User-Agent": "stream-party v1" };
+
+    const searchRes = await fetch(`https://api.opensubtitles.com/api/v1/subtitles?${params}`, { headers });
+    const searchData = await searchRes.json();
+    const fileId = searchData.data?.[0]?.attributes?.files?.[0]?.file_id;
+    if (!fileId) { console.log("[sub-auto] no results"); return null; }
+
+    const dlRes = await fetch("https://api.opensubtitles.com/api/v1/download", {
+      method: "POST", headers,
+      body: JSON.stringify({ file_id: fileId })
+    });
+    const dlData = await dlRes.json();
+    if (!dlData.link) { console.log("[sub-auto] no download link:", JSON.stringify(dlData)); return null; }
+
+    const subRes = await fetch(dlData.link);
+    const text = await subRes.text();
+    const vtt = text.trimStart().startsWith("WEBVTT") ? text : srtToVtt(text);
+    console.log(`[sub-auto] fetched subtitle: ${dlData.file_name} (${text.length} bytes)`);
+    return vtt;
+  } catch(e) {
+    console.log("[sub-auto] error:", e.message);
+    return null;
+  }
+}
+
 function infoHashFromMagnet(magnet) {
   const m = magnet.match(/xt=urn:btih:([a-fA-F0-9]{40}|[a-zA-Z2-7]{32})/i);
   return m ? m[1].toLowerCase() : null;
