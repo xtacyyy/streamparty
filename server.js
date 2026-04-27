@@ -1,15 +1,24 @@
 import http from "http";
 import fs from "fs";
 import path from "path";
-import { fileURLToPath } from "url";
+import { fileURLToPath, URL as NodeURL } from "url";
+import { createRequire } from "module";
 import WebTorrent from "webtorrent";
 import { WebSocketServer } from "ws";
+
+const require = createRequire(import.meta.url);
+const ffmpegPath = require("ffmpeg-static");
+const ffprobeStatic = require("ffprobe-static");
+const Ffmpeg = require("fluent-ffmpeg");
+Ffmpeg.setFfmpegPath(ffmpegPath);
+Ffmpeg.setFfprobePath(ffprobeStatic.path);
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
 const client = new WebTorrent();
 let activeTorrent = null;
 let activeFile = null;
+let activeTrackInfo = null;
 
 function infoHashFromMagnet(magnet) {
   const m = magnet.match(/xt=urn:btih:([a-fA-F0-9]{40}|[a-zA-Z2-7]{32})/i);
