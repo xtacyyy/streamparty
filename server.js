@@ -290,18 +290,44 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && u.pathname === "/stream") {
     if (!activeFile) { res.writeHead(404); res.end("No active stream"); return; }
 
-    // Audio track remux via ffmpeg
     const audioParam = u.searchParams.get("audio");
+    const compatMode = u.searchParams.get("compat") === "1";
+    const ext = activeFile.name.split(".").pop().toLowerCase();
+    const inputFormat = ext === "mkv" ? "matroska" : ext;
+
+    // Audio track remux via ffmpeg
     if (audioParam !== null) {
       const audioIdx = parseInt(audioParam);
-      const ext = activeFile.name.split(".").pop().toLowerCase();
-      const inputFormat = ext === "mkv" ? "matroska" : ext;
       res.writeHead(200, { "Content-Type": "video/mp4" });
       const ff = Ffmpeg()
         .input(activeFile.createReadStream())
         .inputFormat(inputFormat)
         .outputOptions(["-map 0:v:0", `-map 0:a:${audioIdx}`, "-c:v copy", "-c:a aac", "-b:a 192k", "-f mp4", "-movflags frag_keyframe+empty_moov"])
         .on("error", e => { console.error("[audio remux]", e.message); try { res.end(); } catch(_) {} })
+        .pipe(res, { end: true });
+      req.on("close", () => { try { ff.kill("SIGKILL"); } catch(_) {} });
+      return;
+    }
+
+    // iOS compat mode — remux everything to fragmented H.264/AAC MP4
+    if (compatMode || !["mp4", "m4v"].includes(ext)) {
+      const ua = req.headers["user-agent"] || "";
+      const isIOS = /iPhone|iPad|iPod/i.test(ua);
+      // Only force-transcode for iOS; for other browsers just remux container
+      const videoCodec = isIOS ? "libx264" : "copy";
+      const audioCodec = "aac";
+      console.log(`[compat] remuxing for ${isIOS ? "iOS" : "non-MP4 browser"}: ${activeFile.name}`);
+      res.writeHead(200, { "Content-Type": "video/mp4" });
+      const ff = Ffmpeg()
+        .input(activeFile.createReadStream())
+        .inputFormat(inputFormat)
+        .outputOptions([
+          "-map 0:v:0", "-map 0:a:0",
+          `-c:v ${videoCodec}`, `-c:a ${audioCodec}`, "-b:a 192k",
+          "-preset ultrafast", "-tune zerolatency",
+          "-f mp4", "-movflags frag_keyframe+empty_moov+default_base_moof"
+        ])
+        .on("error", e => { console.error("[compat remux]", e.message); try { res.end(); } catch(_) {} })
         .pipe(res, { end: true });
       req.on("close", () => { try { ff.kill("SIGKILL"); } catch(_) {} });
       return;

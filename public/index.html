@@ -212,6 +212,13 @@ let members = [];
 let syncing = false;
 let statusInterval = null;
 
+const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) ||
+  (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+function streamUrl(extra = '') {
+  return '/stream?compat=1' + (extra ? '&' + extra : '') + '&t=' + Date.now();
+}
+
 const AV_COLORS = ['#7c3aed','#0891b2','#059669','#d97706','#e11d48','#4f46e5','#0f766e'];
 const BASE = window.location.origin;
 const WS_BASE = BASE.replace(/^http/, 'ws');
