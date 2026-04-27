@@ -467,8 +467,16 @@ function wsSend(data) {
   }
 }
 
+const WORDS_A = ['amber','breezy','calm','cherry','cloudy','cozy','crisp','crystal','daisy','dewy','dreamy','dusty','fluffy','foggy','frosted','gentle','gilded','golden','happy','hazy','hidden','honey','jolly','kind','lavender','lazy','leafy','lemon','lilac','lovely','lucky','lunar','maple','misty','mossy','muted','mystic','noble','opal','peachy','perky','petal','piney','polar','pretty','quiet','rainy','rosy','rustic','sage','sandy','serene','shiny','silky','silver','sleepy','snowy','solar','starry','stormy','sunny','sweet','tiny','velvet','warm','wispy','witty'];
+const WORDS_B = ['apple','aurora','berry','blossom','brook','cedar','clover','coral','creek','crystal','dove','dream','dune','dusk','fawn','feather','fern','flame','flower','flute','forest','fox','gale','garden','gem','glade','grove','harbor','heart','hill','iris','ivy','jewel','lake','lark','leaf','lily','lotus','luna','maple','meadow','mist','moon','moss','nest','oak','ocean','petal','pond','prism','quartz','rain','ray','reef','river','rose','shell','sky','snow','song','star','stone','stream','sun','tide','tulip','vale','wave','willow','wind','wood'];
+function wordRoomId() {
+  const a = WORDS_A[Math.floor(Math.random() * WORDS_A.length)];
+  const b = WORDS_B[Math.floor(Math.random() * WORDS_B.length)];
+  return `${a}-${b}`;
+}
+
 function createRoom() {
-  roomId = Math.random().toString(36).slice(2, 10);
+  roomId = wordRoomId();
   members = [];
   connectWS(roomId);
   updateRoomUI();
