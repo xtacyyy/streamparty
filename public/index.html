@@ -732,7 +732,8 @@ async function loadTracks() {
   const pollAutoSub = async (n) => {
     if (autoSubApplied || n > 30) return;
     try {
-      const t = await fetch('/api/tracks').then(r => r.json());
+      const t = await fetchJson('/api/tracks');
+      if (!t || t._empty) { setTimeout(() => pollAutoSub(n), 3000); return; }
       if (t.hasAutoSub && !autoSubApplied) {
         applyAutoSub();
       } else if (!autoSubApplied) {
