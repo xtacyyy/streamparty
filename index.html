@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>stream.party — Watch Together</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;700;800&family=Space+Mono:wght@400;700&display=swap');
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0a0a0f; --surface: #111118; --surface2: #1a1a24; --surface3: #22222f;
+    --accent: #7c3aed; --accent2: #a78bfa; --text: #f0eeff; --text2: #9b97b8; --text3: #5c5878;
+    --border: rgba(124,58,237,0.2); --border2: rgba(124,58,237,0.45);
+    --success: #34d399; --danger: #f87171; --warn: #fbbf24;
+    --font: 'Syne', sans-serif; --mono: 'Space Mono', monospace; --r: 10px;
+  }
+  html, body { height: 100%; }
+  body { font-family: var(--font); background: var(--bg); color: var(--text); display: flex; flex-direction: column; overflow: hidden; }
+
+  .header { display: flex; align-items: center; gap: 12px; padding: 14px 24px; border-bottom: 1px solid var(--border); background: var(--surface); flex-shrink: 0; }
+  .logo { font-size: 20px; font-weight: 800; letter-spacing: -0.5px; background: linear-gradient(135deg, #a78bfa, #c4b5fd); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .logo span { font-weight: 400; font-size: 16px; -webkit-text-fill-color: var(--text3); }
+  .room-pill { margin-left: auto; display: flex; align-items: center; gap: 8px; background: var(--surface2); border: 1px solid var(--border); border-radius: 999px; padding: 6px 14px; font-size: 12px; font-family: var(--mono); color: var(--text2); cursor: pointer; transition: border-color 0.2s; user-select: none; }
+  .room-pill:hover { border-color: var(--border2); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text3); flex-shrink: 0; }
+  .dot.live { background: var(--success); box-shadow: 0 0 6px var(--success); animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.4} }
+  .peer-badge { background: var(--accent); color: #fff; font-size: 10px; border-radius: 999px; padding: 1px 8px; font-family: var(--mono); display: none; }
+
+  .main { display: grid; grid-template-columns: 1fr 300px; flex: 1; min-height: 0; overflow: hidden; }
+
+  .player-area { display: flex; flex-direction: column; border-right: 1px solid var(--border); overflow: hidden; }
+  .video-wrapper { background: #000; flex: 1; position: relative; display: flex; align-items: center; justify-content: center; min-height: 0; }
+  #videoEl { width: 100%; height: 100%; object-fit: contain; display: none; }
+  .placeholder { display: flex; flex-direction: column; align-items: center; gap: 14px; color: var(--text3); text-align: center; padding: 40px; }
+  .play-ring { width: 60px; height: 60px; border-radius: 50%; border: 2px solid #2a2a3a; display: flex; align-items: center; justify-content: center; }
+
+  .status-strip { background: var(--surface2); border-top: 1px solid var(--border); padding: 8px 20px; display: flex; align-items: center; gap: 12px; font-size: 12px; font-family: var(--mono); color: var(--text3); flex-shrink: 0; }
+  .spinner { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--text3); border-top-color: var(--accent2); animation: spin 0.8s linear infinite; display: none; flex-shrink: 0; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .torrent-info { background: var(--surface2); border-radius: var(--r); padding: 10px 14px; display: none; gap: 16px; flex-wrap: wrap; }
+  .torrent-info.on { display: flex; }
+  .ti { display: flex; flex-direction: column; gap: 3px; }
+  .ti-l { font-size: 10px; color: var(--text3); font-family: var(--mono); }
+  .ti-v { font-size: 13px; font-weight: 700; color: var(--text); font-family: var(--mono); }
+  .pbar { background: var(--surface3); border-radius: 999px; height: 3px; margin-top: 4px; min-width: 80px; }
+  .pfill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--accent), var(--accent2)); width: 0%; transition: width 0.4s; }
+
+  .controls-panel { padding: 16px 20px; display: flex; flex-direction: column; gap: 14px; background: var(--surface); border-top: 1px solid var(--border); flex-shrink: 0; }
+  .field-label { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; color: var(--text3); text-transform: uppercase; margin-bottom: 6px; }
+  .row { display: flex; gap: 8px; align-items: center; }
+
+  input[type=text] { flex: 1; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--r); padding: 9px 13px; font-family: var(--mono); font-size: 12px; color: var(--text); outline: none; transition: border-color 0.2s; width: 100%; }
+  input[type=text]:focus { border-color: var(--border2); }
+  input[type=text]::placeholder { color: var(--text3); }
+
+  button { background: var(--accent); color: #fff; border: none; border-radius: var(--r); padding: 9px 18px; font-family: var(--font); font-size: 13px; font-weight: 700; cursor: pointer; transition: opacity 0.15s, transform 0.1s; white-space: nowrap; }
+  button:hover { opacity: 0.85; }
+  button:active { transform: scale(0.97); }
+  button.ghost { background: var(--surface3); color: var(--text2); border: 1px solid var(--border); }
+  button.ghost:hover { border-color: var(--border2); color: var(--text); }
+  button:disabled { opacity: 0.35; cursor: default; }
+
+  .chat-area { display: flex; flex-direction: column; background: var(--surface); min-height: 0; overflow: hidden; }
+  .chat-hdr { padding: 13px 18px; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text3); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  .avatars { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 14px; border-bottom: 1px solid var(--border); flex-shrink: 0; min-height: 48px; align-items: center; }
+  .av { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #fff; flex-shrink: 0; }
+  .messages { flex: 1; overflow-y: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+  .messages::-webkit-scrollbar { width: 4px; }
+  .messages::-webkit-scrollbar-thumb { background: var(--surface3); border-radius: 4px; }
+  .msg { display: flex; flex-direction: column; gap: 2px; }
+  .msg-meta { font-size: 11px; font-family: var(--mono); color: var(--text3); }
+  .msg-meta .name { color: var(--accent2); margin-right: 6px; }
+  .msg-body { font-size: 13px; color: var(--text); line-height: 1.5; word-break: break-word; }
+  .msg.sys .msg-body { color: var(--text3); font-style: italic; font-size: 12px; }
+  .msg.sys .msg-meta { display: none; }
+  .chat-foot { display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--border); flex-shrink: 0; }
+  .chat-foot button { padding: 9px 13px; font-size: 12px; }
+
+  .toast { position: fixed; bottom: 24px; right: 24px; background: var(--surface2); border: 1px solid var(--border2); border-radius: var(--r); padding: 11px 16px; font-size: 13px; color: var(--text); z-index: 999; transform: translateY(60px); opacity: 0; transition: all 0.25s cubic-bezier(.34,1.56,.64,1); max-width: 300px; pointer-events: none; }
+  .toast.show { transform: translateY(0); opacity: 1; }
+
+  @media (max-width: 680px) { .main { grid-template-columns: 1fr; overflow-y: auto; } body { overflow: auto; } .chat-area { min-height: 350px; } }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">stream<span>.party</span></div>
+  <div class="room-pill" id="roomPill" onclick="copyRoomId()" title="Click to copy Room ID">
+    <div class="dot" id="statusDot"></div>
+    <span id="roomDisplay">no room</span>
+    <span class="peer-badge" id="peerBadge">1</span>
+  </div>
+</div>
+
+<div class="main">
+  <div class="player-area">
+    <div class="video-wrapper">
+      <video id="videoEl" controls></video>
+      <div class="placeholder" id="placeholder">
+        <div class="play-ring">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="#5c5878"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        </div>
+        <div style="font-size:15px;font-weight:700;color:#9b97b8;">Paste a magnet link below</div>
+        <div style="font-size:12px;color:#5c5878;line-height:1.7;max-width:260px;">Create a room, share the ID with friends, and everyone watches in perfect sync.</div>
+      </div>
+    </div>
+
+    <div class="status-strip">
+      <div class="spinner" id="spinner"></div>
+      <span id="statusText">Ready</span>
+      <span id="dlSpeed" style="margin-left:auto;"></span>
+      <span id="torPeers"></span>
+    </div>
+
+    <div class="torrent-info on" id="torInfo" style="display:none;margin:0 20px 0;">
+      <div class="ti"><div class="ti-l">File</div><div class="ti-v" id="tiName" style="font-size:11px;max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">—</div></div>
+      <div class="ti"><div class="ti-l">Downloaded</div><div class="ti-v" id="tiPct">0%</div><div class="pbar"><div class="pfill" id="tiBar"></div></div></div>
+      <div class="ti"><div class="ti-l">Speed</div><div class="ti-v" id="tiSpd">—</div></div>
+      <div class="ti"><div class="ti-l">Peers</div><div class="ti-v" id="tiPeers">0</div></div>
+    </div>
+
+    <div class="controls-panel">
+      <div>
+        <div class="field-label">Magnet / Torrent Link</div>
+        <div class="row">
+          <input type="text" id="magnetInput" placeholder="magnet:?xt=urn:btih:..." />
+          <button onclick="loadTorrent()">▶ Load</button>
+        </div>
+      </div>
+      <div>
+        <div class="field-label">Room</div>
+        <div class="row" style="flex-wrap:wrap;gap:6px;">
+          <button class="ghost" onclick="createRoom()" style="flex:none;">+ New Room</button>
+          <input type="text" id="joinInput" placeholder="Room ID to join..." style="flex:1;min-width:120px;" />
+          <button class="ghost" onclick="joinRoom()" style="flex:none;">Join</button>
+        </div>
+      </div>
+      <div>
+        <div class="field-label">Your Name</div>
+        <input type="text" id="nameInput" placeholder="Anonymous" style="max-width:180px;" />
+      </div>
+    </div>
+  </div>
+
+  <div class="chat-area">
+    <div class="chat-hdr">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      Party Chat
+    </div>
+    <div class="avatars" id="avatars"></div>
+    <div class="messages" id="messages">
+      <div class="msg sys"><div class="msg-body">Welcome! Paste a magnet link and create a room to watch with friends.</div></div>
+    </div>
+    <div class="chat-foot">
+      <input type="text" id="chatInput" placeholder="Say something..." onkeydown="if(event.key==='Enter')sendChat()" />
+      <button onclick="sendChat()">Send</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── State ──
+let ws = null;
+let roomId = null;
+let members = [];
+let syncing = false;
+let statusInterval = null;
+
+const AV_COLORS = ['#7c3aed','#0891b2','#059669','#d97706','#e11d48','#4f46e5','#0f766e'];
+const BASE = window.location.origin;
+const WS_BASE = BASE.replace(/^http/, 'ws');
+
+function getName() {
+  return document.getElementById('nameInput').value.trim() || ('Viewer' + Math.floor(Math.random()*900+100));
+}
+
+function getColor(str) {
+  let h = 0;
+  for (const c of str) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return AV_COLORS[h % AV_COLORS.length];
+}
+
+function toast(msg, dur = 3200) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.classList.remove('show'), dur);
+}
+
+function setStatus(text, loading = false) {
+  document.getElementById('statusText').textContent = text;
+  document.getElementById('spinner').style.display = loading ? 'block' : 'none';
+}
+
+function fmtBytes(b) {
+  if (!b) return '0 B/s';
+  if (b < 1024) return b + ' B/s';
+  if (b < 1048576) return (b/1024).toFixed(1) + ' KB/s';
+  return (b/1048576).toFixed(2) + ' MB/s';
+}
+
+function fmtTime(s) {
+  const m = Math.floor(s/60), ss = Math.floor(s%60);
+  return `${m}:${String(ss).padStart(2,'0')}`;
+}
+
+// ── Messages ──
+function sysMsg(html) {
+  const msgs = document.getElementById('messages');
+  const d = document.createElement('div');
+  d.className = 'msg sys';
+  d.innerHTML = `<div class="msg-body">${html}</div>`;
+  msgs.appendChild(d);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function chatMsg(sender, text) {
+  const msgs = document.getElementById('messages');
+  const d = document.createElement('div');
+  d.className = 'msg';
+  const t = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+  d.innerHTML = `<div class="msg-meta"><span class="name">${sender}</span>${t}</div><div class="msg-body">${text}</div>`;
+  msgs.appendChild(d);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+// ── Avatars ──
+function updateAvatars() {
+  const box = document.getElementById('avatars');
+  box.innerHTML = '';
+  const all = [getName(), ...members];
+  all.forEach(name => {
+    const av = document.createElement('div');
+    av.className = 'av';
+    av.title = name;
+    av.style.background = getColor(name);
+    av.textContent = name.slice(0,2).toUpperCase();
+    box.appendChild(av);
+  });
+}
+
+// ── Room UI ──
+function updateRoomUI() {
+  const dot = document.getElementById('statusDot');
+  const display = document.getElementById('roomDisplay');
+  const badge = document.getElementById('peerBadge');
+  if (roomId) {
+    dot.classList.add('live');
+    display.textContent = roomId;
+    badge.textContent = members.length + 1;
+    badge.style.display = 'inline';
+  } else {
+    dot.classList.remove('live');
+    display.textContent = 'no room';
+    badge.style.display = 'none';
+  }
+  updateAvatars();
+}
+
+function copyRoomId() {
+  if (!roomId) { toast('Create a room first'); return; }
+  navigator.clipboard.writeText(roomId)
+    .then(() => toast('✓ Room ID copied! Share it with friends.'))
+    .catch(() => toast('Room ID: ' + roomId));
+}
+
+// ── WebSocket Room ──
+function connectWS(id) {
+  if (ws) { try { ws.close(); } catch(e) {} }
+  ws = new WebSocket(`${WS_BASE}/ws`);
+
+  ws.onopen = () => {
+    ws.send(JSON.stringify({ type: 'join', roomId: id, name: getName() }));
+  };
+
+  ws.onmessage = (e) => {
+    let msg;
+    try { msg = JSON.parse(e.data); } catch { return; }
+    const vid = document.getElementById('videoEl');
+
+    if (msg.type === 'joined') {
+      members.push(msg.sender);
+      sysMsg(`<strong style="color:var(--accent2)">${msg.sender}</strong> joined 🎉`);
+      updateRoomUI();
+      // Send current magnet to new joiner
+      const mag = document.getElementById('magnetInput').value.trim();
+      if (mag) wsSend({ type: 'magnet', magnet: mag });
+    } else if (msg.type === 'left') {
+      members = members.filter(m => m !== msg.sender);
+      sysMsg(`${msg.sender} left`);
+      updateRoomUI();
+    } else if (msg.type === 'chat') {
+      chatMsg(msg.sender, msg.text);
+    } else if (msg.type === 'magnet') {
+      document.getElementById('magnetInput').value = msg.magnet;
+      sysMsg(`${msg.sender} loaded a torrent — syncing...`);
+      loadTorrent(false);
+    } else if (msg.type === 'play') {
+      syncing = true;
+      vid.currentTime = msg.time;
+      vid.play().catch(()=>{});
+      sysMsg(`${msg.sender} pressed play ▶`);
+      setTimeout(() => syncing = false, 500);
+    } else if (msg.type === 'pause') {
+      syncing = true;
+      vid.pause();
+      vid.currentTime = msg.time;
+      sysMsg(`${msg.sender} paused ⏸`);
+      setTimeout(() => syncing = false, 500);
+    } else if (msg.type === 'seek') {
+      syncing = true;
+      vid.currentTime = msg.time;
+      sysMsg(`${msg.sender} jumped to ${fmtTime(msg.time)}`);
+      setTimeout(() => syncing = false, 500);
+    }
+  };
+
+  ws.onclose = () => { sysMsg('Disconnected from room'); };
+  ws.onerror = () => { sysMsg('WebSocket error — could not connect to room'); };
+}
+
+function wsSend(data) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ ...data, sender: getName() }));
+  }
+}
+
+function createRoom() {
+  roomId = Math.random().toString(36).slice(2, 10);
+  members = [];
+  connectWS(roomId);
+  updateRoomUI();
+  sysMsg(`Room created! ID: <strong style="color:var(--accent2);font-family:var(--mono)">${roomId}</strong>`);
+  copyRoomId();
+}
+
+function joinRoom() {
+  const target = document.getElementById('joinInput').value.trim();
+  if (!target) { toast('Enter a Room ID first'); return; }
+  roomId = target;
+  members = [];
+  connectWS(roomId);
+  updateRoomUI();
+  sysMsg(`Joining room <strong style="color:var(--accent2)">${target}</strong>…`);
+}
+
+// ── Torrent Loading ──
+async function loadTorrent(broadcast = true) {
+  const magnet = document.getElementById('magnetInput').value.trim();
+  if (!magnet) { toast('Paste a magnet link first'); return; }
+
+  if (broadcast) wsSend({ type: 'magnet', magnet });
+
+  setStatus('Loading torrent on server…', true);
+  document.getElementById('torInfo').style.display = 'none';
+
+  try {
+    const res = await fetch('/api/load', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ magnet })
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      setStatus('Error: ' + (data.error || res.status));
+      toast('Failed to load torrent: ' + (data.error || res.status));
+      return;
+    }
+
+    // Torrent loaded — set video src to streaming endpoint
+    const vid = document.getElementById('videoEl');
+    const ph = document.getElementById('placeholder');
+
+    document.getElementById('tiName').textContent = data.file;
+    document.getElementById('torInfo').style.display = 'flex';
+    document.getElementById('torInfo').classList.add('on');
+
+    vid.src = data.streamUrl + '?t=' + Date.now();
+    vid.style.display = 'block';
+    ph.style.display = 'none';
+    setStatus('Streaming: ' + data.file);
+    sysMsg(`▶ Now streaming <strong>${data.file}</strong>`);
+
+    // Bind sync events
+    if (!vid._syncBound) {
+      vid._syncBound = true;
+      vid.addEventListener('play', () => { if (!syncing) wsSend({ type: 'play', time: vid.currentTime }); });
+      vid.addEventListener('pause', () => { if (!syncing) wsSend({ type: 'pause', time: vid.currentTime }); });
+      vid.addEventListener('seeked', () => { if (!syncing) wsSend({ type: 'seek', time: vid.currentTime }); });
+    }
+
+    // Poll server for download stats
+    clearInterval(statusInterval);
+    statusInterval = setInterval(async () => {
+      try {
+        const s = await fetch('/api/status').then(r => r.json());
+        document.getElementById('tiPct').textContent = Math.round(s.progress * 100) + '%';
+        document.getElementById('tiBar').style.width = Math.round(s.progress * 100) + '%';
+        document.getElementById('tiSpd').textContent = fmtBytes(s.downloadSpeed);
+        document.getElementById('tiPeers').textContent = s.numPeers;
+        document.getElementById('dlSpeed').textContent = fmtBytes(s.downloadSpeed);
+        document.getElementById('torPeers').textContent = s.numPeers + ' peers';
+      } catch(e) {}
+    }, 1500);
+
+  } catch (e) {
+    setStatus('Error: ' + e.message);
+    toast('Error: ' + e.message);
+  }
+}
+
+// ── Chat ──
+function sendChat() {
+  const input = document.getElementById('chatInput');
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  chatMsg(getName(), text);
+  wsSend({ type: 'chat', text });
+}
+
+updateAvatars();
+</script>
+</body>
+</html>
