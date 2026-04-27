@@ -525,6 +525,68 @@ function initVideoControls(vid) {
 function setVolume(val) { setVolumeVid(val); }
 function toggleMute() { toggleMuteVid(); }
 
+// ── Track Selection ──
+async function loadTracks() {
+  // Poll until server has finished probing
+  let attempts = 0;
+  const poll = async () => {
+    try {
+      const t = await fetch('/api/tracks').then(r => r.json());
+      if (t.probing && attempts++ < 10) { setTimeout(poll, 2000); return; }
+
+      // Subtitles
+      const subSel = document.getElementById('subTrack');
+      if (t.subtitles && t.subtitles.length > 0) {
+        t.subtitles.forEach(s => {
+          const opt = document.createElement('option');
+          opt.value = s.index;
+          opt.textContent = '💬 ' + (s.title !== `Track ${s.index}` ? s.title : s.lang.toUpperCase());
+          subSel.appendChild(opt);
+        });
+        subSel.style.display = 'inline-block';
+      }
+
+      // Audio tracks
+      const audSel = document.getElementById('audioTrack');
+      if (t.audio && t.audio.length > 1) {
+        t.audio.forEach((a, i) => {
+          const opt = document.createElement('option');
+          opt.value = a.index;
+          opt.textContent = '🔊 ' + (a.title !== `Track ${i + 1}` ? a.title : a.lang.toUpperCase());
+          audSel.appendChild(opt);
+        });
+        audSel.style.display = 'inline-block';
+      }
+    } catch(e) {}
+  };
+  poll();
+}
+
+function selectSubtitle(streamIndex) {
+  const vid = document.getElementById('videoEl');
+  Array.from(vid.querySelectorAll('track')).forEach(t => t.remove());
+  if (streamIndex === '-1') return;
+  const track = document.createElement('track');
+  track.kind = 'subtitles';
+  track.src = `/subtitle/${streamIndex}?t=${Date.now()}`;
+  track.default = true;
+  vid.appendChild(track);
+  // Force showing after load
+  track.addEventListener('load', () => { if (vid.textTracks[0]) vid.textTracks[0].mode = 'showing'; });
+}
+
+function selectAudio(streamIndex) {
+  const vid = document.getElementById('videoEl');
+  const currentTime = vid.currentTime;
+  const wasPaused = vid.paused;
+  vid.src = `/stream?audio=${streamIndex}&t=${Date.now()}`;
+  vid.addEventListener('canplay', function handler() {
+    vid.removeEventListener('canplay', handler);
+    vid.currentTime = currentTime;
+    if (!wasPaused) vid.play().catch(() => {});
+  }, { once: true });
+}
+
 // ── Chat ──
 function sendChat() {
   const input = document.getElementById('chatInput');
