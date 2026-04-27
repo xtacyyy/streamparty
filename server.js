@@ -310,16 +310,16 @@ const server = http.createServer((req, res) => {
     }
 
     // iOS / compat mode — repackage as fragmented MP4, copy video, stereo AAC audio
+    // Use the local HTTP stream as input so ffmpeg can make range requests and seek properly
     if (compatMode || !["mp4", "m4v"].includes(ext)) {
       console.log(`[compat] remuxing: ${activeFile.name}`);
       res.writeHead(200, { "Content-Type": "video/mp4" });
       const ff = Ffmpeg()
-        .input(activeFile.createReadStream())
-        .inputFormat(inputFormat)
+        .input(`http://localhost:${PORT}/stream`)  // seekable via range requests
         .outputOptions([
           "-map 0:v:0", "-map 0:a:0",
-          "-c:v copy",           // never re-encode video — too slow on free tier
-          "-c:a aac", "-ac 2", "-b:a 192k",  // stereo AAC — iOS doesn't handle 5.1
+          "-c:v copy",                             // no video re-encode — just repackage
+          "-c:a aac", "-ac 2", "-b:a 192k",        // downmix to stereo AAC for iOS
           "-f mp4", "-movflags frag_keyframe+empty_moov+default_base_moof"
         ])
         .on("error", e => { console.error("[compat remux]", e.message); try { res.end(); } catch(_) {} })
