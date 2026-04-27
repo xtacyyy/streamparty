@@ -366,7 +366,7 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && u.pathname === "/api/search") {
     const q = u.searchParams.get("q");
     if (!q) { res.writeHead(400); res.end(JSON.stringify({ error: "Missing q" })); return; }
-    try {
+    (async () => {
       const enc = encodeURIComponent(q);
       const [mr, sr] = await Promise.all([
         fetch(`https://v3-cinemeta.strem.io/catalog/movie/top/search=${enc}.json`),
@@ -379,9 +379,7 @@ const server = http.createServer((req, res) => {
       ];
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify(results));
-    } catch(e) {
-      res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
-    }
+    })().catch(e => { res.writeHead(500); res.end(JSON.stringify({ error: e.message })); });
     return;
   }
 
@@ -394,9 +392,8 @@ const server = http.createServer((req, res) => {
     const url = (type === "series" && season && episode)
       ? `https://torrentio.strem.fun/stream/series/${imdb}:${season}:${episode}.json`
       : `https://torrentio.strem.fun/stream/movie/${imdb}.json`;
-    try {
+    (async () => {
       const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
       const data = await r.json();
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify(data.streams || []));
-    } catch(e
+      res.end(JSON.stringify(data.streams || []))
