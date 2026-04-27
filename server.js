@@ -71,6 +71,7 @@ const server = http.createServer((req, res) => {
 
       const setupTorrent = (torrent) => {
         activeTorrent = torrent;
+        activeTrackInfo = null;
         const file = findVideoFile(torrent);
         if (!file) { console.log("[torrent] no video file found"); return; }
         activeFile = file;
@@ -80,6 +81,27 @@ const server = http.createServer((req, res) => {
         const criticalEnd = Math.max(10, Math.floor(pieceCount * 0.1));
         try { torrent.critical(0, criticalEnd); } catch(e) {}
         console.log("[torrent] ready:", file.name, "| pieces:", pieceCount, "| critical: 0-" + criticalEnd);
+
+        // Probe tracks after a short delay to let the stream warm up
+        setTimeout(() => {
+          Ffmpeg.ffprobe(`http://localhost:${PORT}/stream`, (err, meta) => {
+            if (err) { console.log("[tracks] probe failed:", err.message); activeTrackInfo = { subtitles: [], audio: [] }; return; }
+            const streams = meta.streams || [];
+            activeTrackInfo = {
+              subtitles: streams.filter(s => s.codec_type === "subtitle").map(s => ({
+                index: s.index,
+                lang: s.tags?.language || "und",
+                title: s.tags?.title || (s.tags?.language ? s.tags.language.toUpperCase() : `Track ${s.index}`)
+              })),
+              audio: streams.filter(s => s.codec_type === "audio").map((s, i) => ({
+                index: s.index,
+                lang: s.tags?.language || "und",
+                title: s.tags?.title || (s.tags?.language ? s.tags.language.toUpperCase() : `Track ${i + 1}`)
+              }))
+            };
+            console.log(`[tracks] ${activeTrackInfo.subtitles.length} subtitle(s), ${activeTrackInfo.audio.length} audio track(s)`);
+          });
+        }, 3000);
       };
 
       client.add(magnet, { path: path.join(__dirname, "downloads") }, setupTorrent);
