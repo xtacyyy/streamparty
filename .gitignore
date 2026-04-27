@@ -1,3 +1,4 @@
 node_modules/
 downloads/
 *.log
+sync-config.ps1
