@@ -513,6 +513,12 @@ function togglePlay() {
 
 function toggleFullscreen() {
   const wrapper = document.querySelector('.video-wrapper');
+  const vid = document.getElementById('videoEl');
+  if (isIOS) {
+    // iOS only supports fullscreen on the video element itself
+    if (vid.webkitEnterFullscreen) vid.webkitEnterFullscreen();
+    return;
+  }
   if (!document.fullscreenElement) wrapper.requestFullscreen().catch(()=>{});
   else document.exitFullscreen();
 }
