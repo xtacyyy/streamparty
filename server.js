@@ -42,16 +42,10 @@ const server = http.createServer((req, res) => {
       console.log("[torrent] loading:", magnet.slice(0, 80));
       let responded = false;
 
-      const onReady = (torrent) => {
-        if (responded) return;
+      const setupTorrent = (torrent) => {
         activeTorrent = torrent;
         const file = findVideoFile(torrent);
-        if (!file) {
-          responded = true;
-          res.writeHead(404);
-          res.end(JSON.stringify({ error: "No video file found", files: torrent.files.map(f => f.name) }));
-          return;
-        }
+        if (!file) { console.log("[torrent] no video file found"); return; }
         activeFile = file;
         torrent.files.forEach(f => f === file ? f.select() : f.deselect());
         torrent.strategy = "sequential";
@@ -59,34 +53,34 @@ const server = http.createServer((req, res) => {
         const criticalEnd = Math.max(10, Math.floor(pieceCount * 0.1));
         try { torrent.critical(0, criticalEnd); } catch(e) {}
         console.log("[torrent] ready:", file.name, "| pieces:", pieceCount, "| critical: 0-" + criticalEnd);
-        responded = true;
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: true, name: torrent.name, file: file.name, size: file.length, streamUrl: "/stream" }));
       };
 
-      const onError = (e) => { if (!responded) { responded = true; res.writeHead(500); res.end(JSON.stringify({ error: e.message })); } };
-      setTimeout(() => { if (!responded) { responded = true; res.writeHead(408); res.end(JSON.stringify({ error: "Timeout getting metadata after 25s" })); } }, 25000);
-
       if (existing && existing.ready) {
-        onReady(existing);
+        setupTorrent(existing);
       } else if (existing) {
-        existing.once("ready", () => onReady(existing));
-        existing.once("error", onError);
+        existing.once("ready", () => setupTorrent(existing));
       } else {
-        client.add(magnet, { path: path.join(__dirname, "downloads") }, onReady);
-        client.once("error", onError);
+        client.add(magnet, { path: path.join(__dirname, "downloads") }, setupTorrent);
+        client.once("error", e => console.error("[torrent] error:", e.message));
       }
+
+      // Return immediately — frontend polls /api/status for readiness
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, loading: true }));
     });
     return;
   }
 
   if (req.method === "GET" && u.pathname === "/api/status") {
-    if (!activeTorrent) { res.writeHead(404); res.end(JSON.stringify({ error: "No active torrent" })); return; }
+    if (!activeTorrent) { res.writeHead(200); res.end(JSON.stringify({ loading: true, ready: false })); return; }
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({
+      ready: !!activeFile,
+      loading: !activeFile,
       name: activeTorrent.name,
       file: activeFile?.name,
       size: activeFile?.length,
+      streamUrl: activeFile ? "/stream" : null,
       progress: activeTorrent.progress,
       downloadSpeed: activeTorrent.downloadSpeed,
       numPeers: activeTorrent.numPeers,

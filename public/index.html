@@ -357,8 +357,9 @@ async function loadTorrent(broadcast = true) {
 
   if (broadcast) wsSend({ type: 'magnet', magnet });
 
-  setStatus('Loading torrent on server…', true);
+  setStatus('Sending magnet to server...', true);
   document.getElementById('torInfo').style.display = 'none';
+  clearInterval(statusInterval);
 
   try {
     const res = await fetch('/api/load', {
@@ -367,53 +368,53 @@ async function loadTorrent(broadcast = true) {
       body: JSON.stringify({ magnet })
     });
     const data = await res.json();
+    if (!res.ok) { setStatus('Error: ' + (data.error || res.status)); toast('Failed: ' + (data.error || res.status)); return; }
+  } catch (e) {
+    setStatus('Error: ' + e.message);
+    toast('Error: ' + e.message);
+    return;
+  }
 
-    if (!res.ok) {
-      setStatus('Error: ' + (data.error || res.status));
-      toast('Failed to load torrent: ' + (data.error || res.status));
-      return;
-    }
+  // Poll /api/status until torrent is ready, then start video
+  setStatus('Fetching torrent metadata...', true);
+  let videoStarted = false;
 
-    // Torrent loaded — set video src to streaming endpoint
-    const vid = document.getElementById('videoEl');
-    const ph = document.getElementById('placeholder');
+  statusInterval = setInterval(async () => {
+    try {
+      const s = await fetch('/api/status').then(r => r.json());
 
-    document.getElementById('tiName').textContent = data.file;
-    document.getElementById('torInfo').style.display = 'flex';
-    document.getElementById('torInfo').classList.add('on');
-
-    vid.src = data.streamUrl + '?t=' + Date.now();
-    vid.style.display = 'block';
-    ph.style.display = 'none';
-    setStatus('Streaming: ' + data.file);
-    sysMsg(`▶ Now streaming <strong>${data.file}</strong>`);
-
-    // Bind sync events
-    if (!vid._syncBound) {
-      vid._syncBound = true;
-      vid.addEventListener('play', () => { if (!syncing) wsSend({ type: 'play', time: vid.currentTime }); });
-      vid.addEventListener('pause', () => { if (!syncing) wsSend({ type: 'pause', time: vid.currentTime }); });
-      vid.addEventListener('seeked', () => { if (!syncing) wsSend({ type: 'seek', time: vid.currentTime }); });
-    }
-
-    // Poll server for download stats
-    clearInterval(statusInterval);
-    statusInterval = setInterval(async () => {
-      try {
-        const s = await fetch('/api/status').then(r => r.json());
+      if (s.progress != null) {
         document.getElementById('tiPct').textContent = Math.round(s.progress * 100) + '%';
         document.getElementById('tiBar').style.width = Math.round(s.progress * 100) + '%';
         document.getElementById('tiSpd').textContent = fmtBytes(s.downloadSpeed);
         document.getElementById('tiPeers').textContent = s.numPeers;
         document.getElementById('dlSpeed').textContent = fmtBytes(s.downloadSpeed);
         document.getElementById('torPeers').textContent = s.numPeers + ' peers';
-      } catch(e) {}
-    }, 1500);
+      }
 
-  } catch (e) {
-    setStatus('Error: ' + e.message);
-    toast('Error: ' + e.message);
-  }
+      if (!videoStarted && s.ready && s.streamUrl) {
+        videoStarted = true;
+        const vid = document.getElementById('videoEl');
+        const ph = document.getElementById('placeholder');
+        document.getElementById('tiName').textContent = s.file;
+        document.getElementById('torInfo').style.display = 'flex';
+        vid.src = s.streamUrl + '?t=' + Date.now();
+        vid.style.display = 'block';
+        ph.style.display = 'none';
+        setStatus('Streaming: ' + s.file);
+        sysMsg(`Playing <strong>${s.file}</strong>`);
+
+        if (!vid._syncBound) {
+          vid._syncBound = true;
+          vid.addEventListener('play', () => { if (!syncing) wsSend({ type: 'play', time: vid.currentTime }); });
+          vid.addEventListener('pause', () => { if (!syncing) wsSend({ type: 'pause', time: vid.currentTime }); });
+          vid.addEventListener('seeked', () => { if (!syncing) wsSend({ type: 'seek', time: vid.currentTime }); });
+        }
+      } else if (!videoStarted && !s.ready) {
+        setStatus('Fetching torrent metadata...', true);
+      }
+    } catch(e) {}
+  }, 2000);
 }
 
 // ── Chat ──
