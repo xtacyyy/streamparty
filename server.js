@@ -19,6 +19,15 @@ const client = new WebTorrent();
 let activeTorrent = null;
 let activeFile = null;
 let activeTrackInfo = null;
+let activeSubtitleFiles = []; // external .srt/.vtt files from torrent
+
+const SUBTITLE_EXTS = ["srt", "vtt", "ass", "ssa"];
+
+function srtToVtt(srt) {
+  return "WEBVTT\n\n" + srt
+    .replace(/\r\n/g, "\n")
+    .replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, "$1.$2");
+}
 
 function infoHashFromMagnet(magnet) {
   const m = magnet.match(/xt=urn:btih:([a-fA-F0-9]{40}|[a-zA-Z2-7]{32})/i);
