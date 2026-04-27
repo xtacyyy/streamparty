@@ -552,59 +552,86 @@ let autoSubApplied = false;
 
 async function loadTracks() {
   autoSubApplied = false;
-  let attempts = 0;
-  const poll = async () => {
+  let probeAttempts = 0;
+  let tracksPopulated = false;
+
+  // Phase 1: wait for ffprobe, then populate track dropdowns
+  const pollTracks = async () => {
     try {
       const t = await fetch('/api/tracks').then(r => r.json());
-      if (t.probing && attempts++ < 15) { setTimeout(poll, 2000); return; }
+      if (t.probing && probeAttempts++ < 20) { setTimeout(pollTracks, 2000); return; }
 
-      // Subtitles from torrent
-      const subSel = document.getElementById('subTrack');
-      if (t.subtitles && t.subtitles.length > 0) {
-        t.subtitles.forEach(s => {
-          const opt = document.createElement('option');
-          opt.value = s.index;
-          opt.textContent = '💬 ' + s.title;
-          subSel.appendChild(opt);
-        });
-        subSel.style.display = 'inline-block';
+      if (!tracksPopulated) {
+        tracksPopulated = true;
+
+        // Subtitles from torrent/embedded
+        const subSel = document.getElementById('subTrack');
+        if (t.subtitles && t.subtitles.length > 0) {
+          t.subtitles.forEach(s => {
+            const opt = document.createElement('option');
+            opt.value = s.index;
+            opt.textContent = '💬 ' + s.title;
+            subSel.appendChild(opt);
+          });
+          subSel.style.display = 'inline-block';
+        }
+
+        // Audio tracks
+        const audSel = document.getElementById('audioTrack');
+        if (t.audio && t.audio.length > 1) {
+          t.audio.forEach(a => {
+            const opt = document.createElement('option');
+            opt.value = a.index;
+            opt.textContent = '🔊 ' + a.title;
+            audSel.appendChild(opt);
+          });
+          audSel.style.display = 'inline-block';
+        }
+
+        document.getElementById('subUrlBtn').style.display = 'inline-block';
       }
 
-      // Always show the "+ Sub" URL button once probing is done
-      document.getElementById('subUrlBtn').style.display = 'inline-block';
-
-      // Audio tracks
-      const audSel = document.getElementById('audioTrack');
-      if (t.audio && t.audio.length > 1) {
-        t.audio.forEach((a, i) => {
-          const opt = document.createElement('option');
-          opt.value = a.index;
-          opt.textContent = '🔊 ' + a.title;
-          audSel.appendChild(opt);
-        });
-        audSel.style.display = 'inline-block';
-      }
-
-      // Auto-subtitle from OpenSubtitles
+      // Check auto-sub in same response
       if (t.hasAutoSub && !autoSubApplied) {
-        autoSubApplied = true;
-        const autoOpt = document.createElement('option');
-        autoOpt.id = 'sub-auto';
-        autoOpt.value = 'url:/subtitle/auto';
-        autoOpt.textContent = '💬 Auto (English)';
-        subSel.appendChild(autoOpt);
-        subSel.style.display = 'inline-block';
-        subSel.value = 'url:/subtitle/auto';
-        selectSubtitle('url:/subtitle/auto', true);
-        sysMsg('🎬 English subtitles auto-loaded from OpenSubtitles');
-      } else if (!t.hasAutoSub && !t.probing && attempts < 20) {
-        // Keep polling a bit longer in case subtitle fetch is still in progress
-        attempts++;
-        setTimeout(poll, 3000);
+        applyAutoSub();
+      } else if (!t.hasAutoSub) {
+        // Phase 2: keep polling for auto-sub separately (up to ~90s)
+        pollAutoSub(0);
       }
     } catch(e) { console.error('[tracks]', e); }
   };
-  poll();
+
+  // Phase 2: lightweight auto-sub poller
+  const pollAutoSub = async (n) => {
+    if (autoSubApplied || n > 30) return;
+    try {
+      const t = await fetch('/api/tracks').then(r => r.json());
+      if (t.hasAutoSub && !autoSubApplied) {
+        applyAutoSub();
+      } else if (!autoSubApplied) {
+        setTimeout(() => pollAutoSub(n + 1), 3000);
+      }
+    } catch(e) { setTimeout(() => pollAutoSub(n + 1), 3000); }
+  };
+
+  pollTracks();
+}
+
+function applyAutoSub() {
+  autoSubApplied = true;
+  const subSel = document.getElementById('subTrack');
+  // Remove existing auto option if present (avoid duplicates on re-call)
+  const existing = document.getElementById('sub-auto');
+  if (existing) existing.remove();
+  const autoOpt = document.createElement('option');
+  autoOpt.id = 'sub-auto';
+  autoOpt.value = 'url:/subtitle/auto';
+  autoOpt.textContent = '💬 Auto (English)';
+  subSel.appendChild(autoOpt);
+  subSel.style.display = 'inline-block';
+  subSel.value = 'url:/subtitle/auto';
+  selectSubtitle('url:/subtitle/auto', true);
+  sysMsg('🎬 English subtitles auto-loaded');
 }
 
 function toggleSubUrlInput() {
