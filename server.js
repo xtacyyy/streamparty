@@ -363,51 +363,40 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (req.method === "GET" && (u.pathname === "/" || u.pathname === "/index.html")) {
-    const htmlPath = path.join(__dirname, "public", "index.html");
-    if (!fs.existsSync(htmlPath)) { res.writeHead(404); res.end("index.html not found"); return; }
-    res.writeHead(200, { "Content-Type": "text/html" });
-    fs.createReadStream(htmlPath).pipe(res);
+  if (req.method === "GET" && u.pathname === "/api/search") {
+    const q = u.searchParams.get("q");
+    if (!q) { res.writeHead(400); res.end(JSON.stringify({ error: "Missing q" })); return; }
+    try {
+      const enc = encodeURIComponent(q);
+      const [mr, sr] = await Promise.all([
+        fetch(`https://v3-cinemeta.strem.io/catalog/movie/top/search=${enc}.json`),
+        fetch(`https://v3-cinemeta.strem.io/catalog/series/top/search=${enc}.json`)
+      ]);
+      const [movies, series] = await Promise.all([mr.json(), sr.json()]);
+      const results = [
+        ...(movies.metas || []).slice(0, 6).map(m => ({ ...m, type: "movie" })),
+        ...(series.metas || []).slice(0, 4).map(s => ({ ...s, type: "series" }))
+      ];
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(results));
+    } catch(e) {
+      res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+    }
     return;
   }
 
-  res.writeHead(404); res.end("Not found");
-});
-
-const wss = new WebSocketServer({ server, path: "/ws" });
-wss.on("connection", (ws) => {
-  ws._roomId = null;
-  ws._name = "Viewer";
-  ws.on("message", (raw) => {
-    let msg;
-    try { msg = JSON.parse(raw); } catch { return; }
-    if (msg.type === "join") {
-      if (!rooms[msg.roomId]) rooms[msg.roomId] = new Set();
-      ws._roomId = msg.roomId;
-      ws._name = msg.name || "Viewer";
-      rooms[msg.roomId].add(ws);
-      broadcast(msg.roomId, ws, JSON.stringify({ type: "joined", sender: ws._name }));
-      console.log(`[room] ${ws._name} joined ${msg.roomId} (${rooms[msg.roomId].size} total)`);
-      return;
-    }
-    if (["play","pause","seek","chat","magnet","subtitle"].includes(msg.type) && ws._roomId) {
-      broadcast(ws._roomId, ws, JSON.stringify({ ...msg, sender: ws._name }));
-    }
-  });
-  ws.on("close", () => {
-    if (ws._roomId && rooms[ws._roomId]) {
-      rooms[ws._roomId].delete(ws);
-      broadcast(ws._roomId, ws, JSON.stringify({ type: "left", sender: ws._name }));
-      if (rooms[ws._roomId].size === 0) delete rooms[ws._roomId];
-    }
-  });
-});
-
-function broadcast(roomId, sender, data) {
-  if (!rooms[roomId]) return;
-  for (const ws of rooms[roomId]) {
-    if (ws !== sender && ws.readyState === 1) ws.send(data);
-  }
-}
-
-server.listen(PORT, () => console.log(`\n  stream.party running at http://localhost:${PORT}\n`));
+  if (req.method === "GET" && u.pathname === "/api/streams") {
+    const imdb = u.searchParams.get("imdb");
+    const type = u.searchParams.get("type") || "movie";
+    const season = u.searchParams.get("season");
+    const episode = u.searchParams.get("episode");
+    if (!imdb) { res.writeHead(400); res.end(JSON.stringify({ error: "Missing imdb" })); return; }
+    const url = (type === "series" && season && episode)
+      ? `https://torrentio.strem.fun/stream/series/${imdb}:${season}:${episode}.json`
+      : `https://torrentio.strem.fun/stream/movie/${imdb}.json`;
+    try {
+      const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
+      const data = await r.json();
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(data.streams || []));
+    } catch(e

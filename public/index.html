@@ -96,6 +96,47 @@
   .toast { position: fixed; bottom: 24px; right: 24px; background: var(--surface2); border: 1px solid var(--border2); border-radius: var(--r); padding: 11px 16px; font-size: 13px; color: var(--text); z-index: 999; transform: translateY(60px); opacity: 0; transition: all 0.25s cubic-bezier(.34,1.56,.64,1); max-width: 300px; pointer-events: none; }
   .toast.show { transform: translateY(0); opacity: 1; }
 
+  /* ── Search ── */
+  .search-wrap { position: relative; }
+  .search-results { position: absolute; bottom: calc(100% + 4px); left: 0; right: 0; background: var(--surface2); border: 1px solid var(--border2); border-radius: var(--r); overflow-y: auto; max-height: 300px; z-index: 60; display: none; box-shadow: 0 -8px 24px rgba(0,0,0,0.5); }
+  .search-results.open { display: block; }
+  .search-item { display: flex; gap: 10px; padding: 9px 12px; cursor: pointer; align-items: center; border-bottom: 1px solid var(--border); transition: background 0.12s; }
+  .search-item:hover { background: var(--surface3); }
+  .search-item:last-child { border-bottom: none; }
+  .search-poster { width: 30px; height: 44px; object-fit: cover; border-radius: 4px; background: var(--surface3); flex-shrink: 0; }
+  .search-info { flex: 1; min-width: 0; }
+  .search-title { font-size: 13px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .search-sub { font-size: 11px; color: var(--text3); font-family: var(--mono); margin-top: 2px; display: flex; align-items: center; gap: 6px; }
+  .type-badge { font-size: 9px; padding: 1px 6px; border-radius: 999px; font-family: var(--mono); font-weight: 700; letter-spacing: 0.05em; }
+  .type-badge.movie { background: rgba(224,96,138,0.2); color: var(--accent2); }
+  .type-badge.series { background: rgba(251,191,36,0.15); color: var(--warn); }
+
+  /* ── Streams modal ── */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 200; display: none; align-items: center; justify-content: center; padding: 16px; }
+  .modal-overlay.open { display: flex; }
+  .modal { background: var(--surface); border: 1px solid var(--border2); border-radius: 14px; width: 500px; max-width: 100%; max-height: 80vh; display: flex; flex-direction: column; overflow: hidden; }
+  .modal-hdr { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+  .modal-title { font-size: 15px; font-weight: 800; color: var(--text); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .modal-close { background: none; border: none; color: var(--text3); font-size: 20px; cursor: pointer; padding: 0 4px; line-height: 1; }
+  .modal-close:hover { color: var(--text); background: none; opacity: 1; transform: none; }
+  .modal-body { overflow-y: auto; flex: 1; }
+  .modal-ep { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; flex-shrink: 0; }
+  .modal-ep label { font-size: 11px; color: var(--text3); font-family: var(--mono); }
+  .modal-ep select { background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: 6px; font-size: 12px; padding: 5px 8px; font-family: var(--mono); }
+  .modal-ep button { padding: 6px 14px; font-size: 12px; }
+  .stream-item { padding: 11px 16px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.12s; display: flex; gap: 12px; align-items: flex-start; }
+  .stream-item:hover { background: var(--surface2); }
+  .stream-item:last-child { border-bottom: none; }
+  .stream-quality { font-size: 10px; font-weight: 700; font-family: var(--mono); padding: 2px 8px; border-radius: 999px; flex-shrink: 0; margin-top: 2px; }
+  .q-4k  { background: rgba(251,191,36,0.15); color: var(--warn); }
+  .q-1080p { background: rgba(52,211,153,0.15); color: var(--success); }
+  .q-720p  { background: rgba(249,168,201,0.15); color: var(--accent2); }
+  .q-sd    { background: var(--surface3); color: var(--text3); }
+  .stream-info { flex: 1; min-width: 0; }
+  .stream-name { font-size: 12px; color: var(--text); line-height: 1.4; word-break: break-all; }
+  .stream-meta { font-size: 11px; color: var(--text3); font-family: var(--mono); margin-top: 3px; }
+  .modal-empty { padding: 32px 16px; color: var(--text3); text-align: center; font-size: 13px; }
+
   @media (max-width: 680px) {
     html, body { height: auto; min-height: 100%; overflow: visible; }
     body { overflow-y: auto; overflow-x: hidden; }
@@ -215,6 +256,14 @@
     </div>
 
     <div class="controls-panel">
+      <div class="search-wrap">
+        <div class="field-label">Search Movie or Show</div>
+        <div class="row">
+          <input type="text" id="searchInput" placeholder="e.g. Inception, Breaking Bad..." onkeydown="if(event.key==='Enter')doSearch()" />
+          <button onclick="doSearch()" id="searchBtn" style="padding:9px 14px;">🔍</button>
+        </div>
+        <div class="search-results" id="searchResults"></div>
+      </div>
       <div>
         <div class="field-label">Magnet / Torrent Link</div>
         <div class="row" style="flex-wrap:wrap;">
@@ -250,6 +299,16 @@
       <input type="text" id="chatInput" placeholder="Say something..." onkeydown="if(event.key==='Enter')sendChat()" />
       <button onclick="sendChat()">Send</button>
     </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalOverlay" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <div class="modal-hdr">
+      <div class="modal-title" id="modalTitle">Pick a stream</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
   </div>
 </div>
 
@@ -629,153 +688,4 @@ async function loadTracks() {
         tracksPopulated = true;
 
         // Subtitles from torrent/embedded
-        const subSel = document.getElementById('subTrack');
-        if (t.subtitles && t.subtitles.length > 0) {
-          t.subtitles.forEach(s => {
-            const opt = document.createElement('option');
-            opt.value = s.index;
-            opt.textContent = '💬 ' + s.title;
-            subSel.appendChild(opt);
-          });
-          subSel.style.display = 'inline-block';
-        }
-
-        // Audio tracks
-        const audSel = document.getElementById('audioTrack');
-        if (t.audio && t.audio.length > 1) {
-          t.audio.forEach(a => {
-            const opt = document.createElement('option');
-            opt.value = a.index;
-            opt.textContent = '🔊 ' + a.title;
-            audSel.appendChild(opt);
-          });
-          audSel.style.display = 'inline-block';
-        }
-
-        document.getElementById('subUrlBtn').style.display = 'inline-block';
-      }
-
-      // Check auto-sub in same response
-      if (t.hasAutoSub && !autoSubApplied) {
-        applyAutoSub();
-      } else if (!t.hasAutoSub) {
-        // Phase 2: keep polling for auto-sub separately (up to ~90s)
-        pollAutoSub(0);
-      }
-    } catch(e) { console.error('[tracks]', e); }
-  };
-
-  // Phase 2: lightweight auto-sub poller
-  const pollAutoSub = async (n) => {
-    if (autoSubApplied || n > 30) return;
-    try {
-      const t = await fetch('/api/tracks').then(r => r.json());
-      if (t.hasAutoSub && !autoSubApplied) {
-        applyAutoSub();
-      } else if (!autoSubApplied) {
-        setTimeout(() => pollAutoSub(n + 1), 3000);
-      }
-    } catch(e) { setTimeout(() => pollAutoSub(n + 1), 3000); }
-  };
-
-  pollTracks();
-}
-
-function applyAutoSub() {
-  autoSubApplied = true;
-  const subSel = document.getElementById('subTrack');
-  // Remove existing auto option if present (avoid duplicates on re-call)
-  const existing = document.getElementById('sub-auto');
-  if (existing) existing.remove();
-  const autoOpt = document.createElement('option');
-  autoOpt.id = 'sub-auto';
-  autoOpt.value = 'url:/subtitle/auto';
-  autoOpt.textContent = '💬 Auto (English)';
-  subSel.appendChild(autoOpt);
-  subSel.style.display = 'inline-block';
-  subSel.value = 'url:/subtitle/auto';
-  selectSubtitle('url:/subtitle/auto', true);
-  sysMsg('🎬 English subtitles auto-loaded');
-}
-
-function toggleSubUrlInput() {
-  const row = document.getElementById('subUrlRow');
-  row.style.display = row.style.display === 'none' ? 'flex' : 'none';
-  if (row.style.display === 'flex') document.getElementById('subUrlInput').focus();
-}
-
-async function loadSubFromUrl() {
-  const url = document.getElementById('subUrlInput').value.trim();
-  if (!url) return;
-  const vid = document.getElementById('videoEl');
-  const subSel = document.getElementById('subTrack');
-
-  // Fetch and proxy through server to avoid CORS, or use directly for .vtt
-  try {
-    // Add as a custom option in the selector
-    let opt = document.getElementById('sub-custom');
-    if (!opt) {
-      opt = document.createElement('option');
-      opt.id = 'sub-custom';
-      subSel.appendChild(opt);
-    }
-    opt.value = 'url:' + url;
-    opt.textContent = '💬 Custom';
-    subSel.style.display = 'inline-block';
-    subSel.value = 'url:' + url;
-    selectSubtitle('url:' + url, true);
-    toggleSubUrlInput();
-  } catch(e) { toast('Failed to load subtitle: ' + e.message); }
-}
-
-function selectSubtitle(streamIndex, broadcast = true) {
-  const vid = document.getElementById('videoEl');
-  Array.from(vid.querySelectorAll('track')).forEach(t => t.remove());
-
-  if (broadcast) wsSend({ type: 'subtitle', trackId: streamIndex });
-
-  if (streamIndex === '-1') return;
-
-  const track = document.createElement('track');
-  track.kind = 'subtitles';
-  track.default = true;
-
-  if (String(streamIndex).startsWith('url:')) {
-    track.src = streamIndex.replace('url:', '');
-  } else {
-    track.src = `/subtitle/${streamIndex}?t=${Date.now()}`;
-  }
-
-  vid.appendChild(track);
-  track.addEventListener('load', () => {
-    for (const t of vid.textTracks) { t.mode = t === vid.textTracks[0] ? 'showing' : 'disabled'; }
-  });
-}
-
-function selectAudio(streamIndex) {
-  const vid = document.getElementById('videoEl');
-  const currentTime = vid.currentTime;
-  const wasPaused = vid.paused;
-  vid.src = isIOS ? streamUrl(`audio=${streamIndex}`) : `/stream?audio=${streamIndex}&t=${Date.now()}`;
-  vid.addEventListener('canplay', function handler() {
-    vid.removeEventListener('canplay', handler);
-    vid.currentTime = currentTime;
-    if (!wasPaused) vid.play().catch(() => {});
-  }, { once: true });
-}
-
-// ── Chat ──
-function sendChat() {
-  const input = document.getElementById('chatInput');
-  const text = input.value.trim();
-  if (!text) return;
-  input.value = '';
-  chatMsg(getName(), text);
-  wsSend({ type: 'chat', text });
-}
-
-updateAvatars();
-</script>
-</body>
-</html>
- 
+        const subSel = document.getElementBy
