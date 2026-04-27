@@ -309,22 +309,17 @@ const server = http.createServer((req, res) => {
       return;
     }
 
-    // iOS compat mode — remux everything to fragmented H.264/AAC MP4
+    // iOS / compat mode — repackage as fragmented MP4, copy video, stereo AAC audio
     if (compatMode || !["mp4", "m4v"].includes(ext)) {
-      const ua = req.headers["user-agent"] || "";
-      const isIOS = /iPhone|iPad|iPod/i.test(ua);
-      // Only force-transcode for iOS; for other browsers just remux container
-      const videoCodec = isIOS ? "libx264" : "copy";
-      const audioCodec = "aac";
-      console.log(`[compat] remuxing for ${isIOS ? "iOS" : "non-MP4 browser"}: ${activeFile.name}`);
+      console.log(`[compat] remuxing: ${activeFile.name}`);
       res.writeHead(200, { "Content-Type": "video/mp4" });
       const ff = Ffmpeg()
         .input(activeFile.createReadStream())
         .inputFormat(inputFormat)
         .outputOptions([
           "-map 0:v:0", "-map 0:a:0",
-          `-c:v ${videoCodec}`, `-c:a ${audioCodec}`, "-b:a 192k",
-          "-preset ultrafast", "-tune zerolatency",
+          "-c:v copy",           // never re-encode video — too slow on free tier
+          "-c:a aac", "-ac 2", "-b:a 192k",  // stereo AAC — iOS doesn't handle 5.1
           "-f mp4", "-movflags frag_keyframe+empty_moov+default_base_moof"
         ])
         .on("error", e => { console.error("[compat remux]", e.message); try { res.end(); } catch(_) {} })
