@@ -342,13 +342,21 @@ function chatMsg(sender, text) {
 function updateAvatars() {
   const box = document.getElementById('avatars');
   box.innerHTML = '';
-  const all = [getName(), ...members];
-  all.forEach(name => {
+  const me = getName();
+  const all = [me, ...members];
+  all.forEach((name, i) => {
     const av = document.createElement('div');
     av.className = 'av';
     av.title = name;
-    av.style.background = getColor(name);
-    av.textContent = name.slice(0,2).toUpperCase();
+    const dot = document.createElement('div');
+    dot.className = 'av-dot';
+    dot.style.background = getColor(name);
+    dot.textContent = name.slice(0,2).toUpperCase();
+    const label = document.createElement('div');
+    label.className = 'av-name';
+    label.textContent = i === 0 ? name + ' (you)' : name;
+    av.appendChild(dot);
+    av.appendChild(label);
     box.appendChild(av);
   });
 }
@@ -392,6 +400,12 @@ function connectWS(id) {
     try { msg = JSON.parse(e.data); } catch { return; }
     const vid = document.getElementById('videoEl');
 
+    if (msg.type === 'room_members') {
+      // Existing members already in the room when we joined
+      msg.members.forEach(name => { if (!members.includes(name)) members.push(name); });
+      updateRoomUI();
+      return;
+    }
     if (msg.type === 'joined') {
       members.push(msg.sender);
       sysMsg(`<strong style="color:var(--accent2)">${msg.sender}</strong> joined 🎉`);
