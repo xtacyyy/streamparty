@@ -114,6 +114,30 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (req.method === "GET" && u.pathname === "/api/tracks") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(activeTrackInfo || { subtitles: [], audio: [], probing: !!activeFile }));
+    return;
+  }
+
+  if (req.method === "GET" && u.pathname.startsWith("/subtitle/")) {
+    const idx = parseInt(u.pathname.split("/")[2]);
+    if (!activeFile || isNaN(idx)) { res.writeHead(404); res.end("Not found"); return; }
+    const ext = activeFile.name.split(".").pop().toLowerCase();
+    const inputFormat = ext === "mkv" ? "matroska" : ext;
+    res.setHeader("Content-Type", "text/vtt; charset=utf-8");
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.writeHead(200);
+    const ff = Ffmpeg()
+      .input(activeFile.createReadStream())
+      .inputFormat(inputFormat)
+      .outputOptions([`-map 0:${idx}`, "-f webvtt"])
+      .on("error", e => { console.error("[sub]", e.message); try { res.end(); } catch(_) {} })
+      .pipe(res, { end: true });
+    req.on("close", () => { try { ff.kill("SIGKILL"); } catch(_) {} });
+    return;
+  }
+
   if (req.method === "GET" && u.pathname === "/api/status") {
     if (!activeTorrent) { res.writeHead(200); res.end(JSON.stringify({ loading: true, ready: false })); return; }
     res.writeHead(200, { "Content-Type": "application/json" });
