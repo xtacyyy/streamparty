@@ -81,10 +81,23 @@ const server = http.createServer((req, res) => {
       const setupTorrent = (torrent) => {
         activeTorrent = torrent;
         activeTrackInfo = null;
+        activeSubtitleFiles = [];
         const file = findVideoFile(torrent);
         if (!file) { console.log("[torrent] no video file found"); return; }
         activeFile = file;
-        torrent.files.forEach(f => f === file ? f.select() : f.deselect());
+
+        // Find and select external subtitle files
+        activeSubtitleFiles = torrent.files.filter(f => {
+          const ext = f.name.split(".").pop().toLowerCase();
+          return SUBTITLE_EXTS.includes(ext);
+        });
+        activeSubtitleFiles.forEach(f => f.select());
+        if (activeSubtitleFiles.length) console.log(`[torrent] found ${activeSubtitleFiles.length} subtitle file(s):`, activeSubtitleFiles.map(f => f.name).join(", "));
+
+        torrent.files.forEach(f => {
+          if (f === file || activeSubtitleFiles.includes(f)) return;
+          f.deselect();
+        });
         torrent.strategy = "sequential";
         const pieceCount = torrent.pieces.length;
         const criticalEnd = Math.max(10, Math.floor(pieceCount * 0.1));
