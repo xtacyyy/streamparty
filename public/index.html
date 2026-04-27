@@ -548,7 +548,10 @@ function setVolume(val) { setVolumeVid(val); }
 function toggleMute() { toggleMuteVid(); }
 
 // ── Track Selection ──
+let autoSubApplied = false;
+
 async function loadTracks() {
+  autoSubApplied = false;
   let attempts = 0;
   const poll = async () => {
     try {
@@ -580,6 +583,24 @@ async function loadTracks() {
           audSel.appendChild(opt);
         });
         audSel.style.display = 'inline-block';
+      }
+
+      // Auto-subtitle from OpenSubtitles
+      if (t.hasAutoSub && !autoSubApplied) {
+        autoSubApplied = true;
+        const autoOpt = document.createElement('option');
+        autoOpt.id = 'sub-auto';
+        autoOpt.value = 'url:/subtitle/auto';
+        autoOpt.textContent = '💬 Auto (English)';
+        subSel.appendChild(autoOpt);
+        subSel.style.display = 'inline-block';
+        subSel.value = 'url:/subtitle/auto';
+        selectSubtitle('url:/subtitle/auto', true);
+        sysMsg('🎬 English subtitles auto-loaded from OpenSubtitles');
+      } else if (!t.hasAutoSub && !t.probing && attempts < 20) {
+        // Keep polling a bit longer in case subtitle fetch is still in progress
+        attempts++;
+        setTimeout(poll, 3000);
       }
     } catch(e) { console.error('[tracks]', e); }
   };
