@@ -334,7 +334,6 @@ const server = http.createServer((req, res) => {
     }
 
     const fileSize = activeFile.length;
-    const ext = activeFile.name.split(".").pop().toLowerCase();
     const mimeTypes = { mp4: "video/mp4", webm: "video/webm", mkv: "video/x-matroska", avi: "video/x-msvideo", mov: "video/quicktime", ogv: "video/ogg", ogg: "video/ogg", ts: "video/mp2t", m4v: "video/mp4" };
     const contentType = mimeTypes[ext] || "video/mp4";
     const rangeHeader = req.headers.range;
