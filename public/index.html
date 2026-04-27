@@ -365,10 +365,9 @@ function updateRoomUI() {
 
 function copyRoomId() {
   if (!roomId) { toast('Create a room first'); return; }
-  const link = window.location.origin + '/?room=' + roomId;
-  navigator.clipboard.writeText(link)
-    .then(() => toast('✓ Link copied! Share it with friends.'))
-    .catch(() => toast(link));
+  navigator.clipboard.writeText(roomId)
+    .then(() => toast('✓ Room ID copied! Share it with friends.'))
+    .catch(() => toast('Room ID: ' + roomId));
 }
 
 // ── WebSocket Room ──
@@ -775,4 +774,7 @@ function sendChat() {
   wsSend({ type: 'chat', text });
 }
 
-// �
+updateAvatars();
+</script>
+</body>
+</html>
