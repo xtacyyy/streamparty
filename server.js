@@ -293,7 +293,7 @@ wss.on("connection", (ws) => {
       console.log(`[room] ${ws._name} joined ${msg.roomId} (${rooms[msg.roomId].size} total)`);
       return;
     }
-    if (["play","pause","seek","chat","magnet"].includes(msg.type) && ws._roomId) {
+    if (["play","pause","seek","chat","magnet","subtitle"].includes(msg.type) && ws._roomId) {
       broadcast(ws._roomId, ws, JSON.stringify({ ...msg, sender: ws._name }));
     }
   });
