@@ -461,7 +461,7 @@ async function loadTorrent(broadcast = true) {
         const ph = document.getElementById('placeholder');
         document.getElementById('tiName').textContent = s.file;
         document.getElementById('torInfo').style.display = 'flex';
-        vid.src = s.streamUrl + '?t=' + Date.now();
+        vid.src = isIOS ? streamUrl() : s.streamUrl + '?t=' + Date.now();
         vid.style.display = 'block';
         ph.style.display = 'none';
         setStatus('Streaming: ' + s.file);
@@ -699,7 +699,7 @@ function selectAudio(streamIndex) {
   const vid = document.getElementById('videoEl');
   const currentTime = vid.currentTime;
   const wasPaused = vid.paused;
-  vid.src = `/stream?audio=${streamIndex}&t=${Date.now()}`;
+  vid.src = isIOS ? streamUrl(`audio=${streamIndex}`) : `/stream?audio=${streamIndex}&t=${Date.now()}`;
   vid.addEventListener('canplay', function handler() {
     vid.removeEventListener('canplay', handler);
     vid.currentTime = currentTime;
