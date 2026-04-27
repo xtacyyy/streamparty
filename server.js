@@ -135,6 +135,7 @@ const server = http.createServer((req, res) => {
         activeTorrent = torrent;
         activeTrackInfo = null;
         activeSubtitleFiles = [];
+        autoSubContent = null;
         const file = findVideoFile(torrent);
         if (!file) { console.log("[torrent] no video file found"); return; }
         activeFile = file;
