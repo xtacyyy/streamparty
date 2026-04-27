@@ -112,6 +112,22 @@
       </div>
     </div>
 
+    <div class="vid-controls" id="vidControls">
+      <div class="vid-seek-row">
+        <input type="range" id="seekBar" min="0" max="1000" value="0" oninput="onSeek(this.value)" style="flex:1;" />
+        <span id="vidTime" class="vid-time">0:00 / 0:00</span>
+      </div>
+      <div class="vid-btn-row">
+        <button class="vid-btn" onclick="togglePlay()" id="playBtn" title="Play/Pause">&#9654;</button>
+        <div class="vol-wrap">
+          <button class="vid-btn" onclick="toggleMuteVid()" id="volBtn" title="Mute">🔊</button>
+          <input type="range" id="volBar" min="0" max="100" value="100" oninput="setVolumeVid(this.value)" style="width:70px;" />
+        </div>
+        <div style="flex:1;"></div>
+        <button class="vid-btn" onclick="toggleFullscreen()" title="Fullscreen">&#x26F6;</button>
+      </div>
+    </div>
+
     <div class="status-strip">
       <div class="spinner" id="spinner"></div>
       <span id="statusText">Ready</span>
