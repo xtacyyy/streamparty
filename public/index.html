@@ -779,7 +779,7 @@ function fetchSeriesStreams(imdbId, title) {
   var episode = document.getElementById('pickEpisode').value;
   var list = document.getElementById('seriesStreamList');
   list.innerHTML = '<div class="modal-empty">Loading streams...</div>';
-  fetch('/api/streams?imdb=' + imdbId + '&type=series&season=' + season + '&episode=' + episode)
+  fetch('/api/streams?imdb=' + imdbId + '&type=series&season=' + season + '&episode=' + episode + '&title=' + encodeURIComponent(title))
     .then(function(r) { return r.json(); })
     .then(function(streams) { renderStreams(list, streams); })
     .catch(function(e) { list.innerHTML = '<div class="modal-empty" style="color:var(--danger)">Failed: ' + e.message + '</div>'; });

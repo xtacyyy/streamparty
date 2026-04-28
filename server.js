@@ -421,34 +421,63 @@ const server = http.createServer((req, res) => {
         }
 
       } else {
-        // Series: EZTV primary
+        // Series: EZTV primary (by IMDB ID)
         if (season && episode) {
           try {
             const numId = imdb.replace(/^tt0*/, "");
             const er = await fetch(`https://eztv.re/api/get-torrents?imdb_id=${numId}&limit=100`, { headers: hdrs });
-            const ed = await er.json();
-            const torrents = (ed.torrents || []).filter(t => {
-              return String(t.season) === String(season) && String(t.episode) === String(episode);
-            });
-            streams = torrents.map(t => ({
-              name: "EZTV",
-              title: t.title + "\n" + (t.size_bytes ? (t.size_bytes / 1024 / 1024 / 1024).toFixed(2) + " GB" : ""),
-              infoHash: (t.hash || "").toLowerCase(),
-              behaviorHints: { filename: t.filename || t.title }
-            })).filter(s => s.infoHash);
+            if (er.ok) {
+              const ed = await er.json();
+              const torrents = (ed.torrents || []).filter(t =>
+                String(t.season) === String(season) && String(t.episode) === String(episode)
+              );
+              streams = torrents.map(t => ({
+                name: "EZTV",
+                title: t.title + "\n" + (t.size_bytes ? (t.size_bytes / 1024 / 1024 / 1024).toFixed(2) + " GB" : ""),
+                infoHash: (t.hash || "").toLowerCase(),
+                behaviorHints: { filename: t.filename || t.title }
+              })).filter(s => s.infoHash);
+            }
           } catch(e) { /* eztv failed */ }
         }
 
-        // Fallback: Torrentio for series
+        // Fallback: apibay (TPB) search by title + episode code
+        if (!streams.length && season && episode) {
+          try {
+            const title = u.searchParams.get("title") || "";
+            const s2 = String(season).padStart(2, "0");
+            const e2 = String(episode).padStart(2, "0");
+            const q = encodeURIComponent((title ? title + " " : "") + `S${s2}E${e2}`);
+            const pr = await fetch(`https://apibay.org/q.php?q=${q}&cat=205,208,200`, { headers: hdrs });
+            if (pr.ok) {
+              const pd = await pr.json();
+              streams = (Array.isArray(pd) ? pd : []).filter(t => t.info_hash && t.info_hash !== "0000000000000000000000000000000000000000").map(t => {
+                const sizeMB = Math.round(Number(t.size || 0) / 1024 / 1024);
+                const sizeStr = sizeMB > 1024 ? (sizeMB / 1024).toFixed(1) + " GB" : sizeMB + " MB";
+                return {
+                  name: "TPB",
+                  title: t.name + "\n" + sizeStr + " - " + (t.seeders || 0) + " seeds",
+                  infoHash: t.info_hash.toLowerCase(),
+                  behaviorHints: { filename: t.name }
+                };
+              }).sort((a, b) => {
+                const sa = Number((b.title.match(/(\d+) seeds/) || [0,0])[1]);
+                const sb = Number((a.title.match(/(\d+) seeds/) || [0,0])[1]);
+                return sa - sb;
+              }).slice(0, 20);
+            }
+          } catch(e) { /* apibay failed */ }
+        }
+
+        // Final fallback: Torrentio for series
         if (!streams.length) {
           try {
             const tsUrl = (season && episode)
               ? `https://torrentio.strem.fun/stream/series/${imdb}:${season}:${episode}.json`
               : `https://torrentio.strem.fun/stream/series/${imdb}.json`;
             const tr = await fetch(tsUrl, { headers: hdrs });
-            const td = await tr.json();
-            streams = td.streams || [];
-          } catch(e) { /* both failed */ }
+            if (tr.ok) { const td = await tr.json(); streams = td.streams || []; }
+          } catch(e) { /* all failed */ }
         }
       }
 
