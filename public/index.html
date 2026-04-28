@@ -732,22 +732,27 @@ function doSearch() {
   btn.textContent = '...'; btn.disabled = true;
   box.innerHTML = '<div style="padding:12px 16px;color:var(--text3);font-size:12px;">Searching...</div>';
   box.classList.add('open');
-  fetch('/api/search?q=' + encodeURIComponent(q))
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      box.innerHTML = '';
-      if (!data.length) { box.innerHTML = '<div style="padding:12px 16px;color:var(--text3);font-size:13px;">No results found</div>'; return; }
-      data.forEach(function(item) {
-        var el = document.createElement('div');
-        el.className = 'search-item';
-        var poster = item.poster ? '<img class="search-poster" src="' + item.poster + '" loading="lazy" onerror="this.style.display=\'none\'">' : '<div class="search-poster"></div>';
-        el.innerHTML = poster + '<div class="search-info"><div class="search-title">' + item.name + '</div><div class="search-sub">' + (item.year || '') + ' <span class="type-badge ' + item.type + '">' + item.type + '</span></div></div>';
-        el.onclick = function() { onSearchPick(item); };
-        box.appendChild(el);
-      });
-    })
-    .catch(function(e) { box.innerHTML = '<div style="padding:12px 16px;color:var(--danger);font-size:13px;">Error: ' + e.message + '</div>'; })
-    .finally(function() { btn.textContent = 'Search'; btn.disabled = false; });
+  var enc = encodeURIComponent(q);
+  Promise.all([
+    fetch('https://v3-cinemeta.strem.io/catalog/movie/top/search=' + enc + '.json').then(function(r){ return r.json(); }).catch(function(){ return {}; }),
+    fetch('https://v3-cinemeta.strem.io/catalog/series/top/search=' + enc + '.json').then(function(r){ return r.json(); }).catch(function(){ return {}; })
+  ]).then(function(res) {
+    var items = [];
+    (res[0].metas || []).slice(0, 6).forEach(function(m){ items.push({ id: m.id, name: m.name, year: m.year, poster: m.poster, type: 'movie' }); });
+    (res[1].metas || []).slice(0, 4).forEach(function(s){ items.push({ id: s.id, name: s.name, year: s.year, poster: s.poster, type: 'series' }); });
+    box.innerHTML = '';
+    if (!items.length) { box.innerHTML = '<div style="padding:12px 16px;color:var(--text3);font-size:13px;">No results found</div>'; return; }
+    items.forEach(function(item) {
+      var el = document.createElement('div');
+      el.className = 'search-item';
+      var poster = item.poster ? '<img class="search-poster" src="' + item.poster + '" loading="lazy" onerror="this.style.display=\'none\'">' : '<div class="search-poster"></div>';
+      el.innerHTML = poster + '<div class="search-info"><div class="search-title">' + item.name + '</div><div class="search-sub">' + (item.year || '') + ' <span class="type-badge ' + item.type + '">' + item.type + '</span></div></div>';
+      el.onclick = function() { onSearchPick(item); };
+      box.appendChild(el);
+    });
+  }).catch(function(e) {
+    box.innerHTML = '<div style="padding:12px 16px;color:var(--danger);font-size:13px;">Error: ' + e.message + '</div>';
+  }).then(function() { btn.textContent = '\u{1F50D}'; btn.disabled = false; });
 }
 
 document.addEventListener('click', function(e) {
@@ -779,9 +784,9 @@ function fetchSeriesStreams(imdbId, title) {
   var episode = document.getElementById('pickEpisode').value;
   var list = document.getElementById('seriesStreamList');
   list.innerHTML = '<div class="modal-empty">Loading streams...</div>';
-  fetch('/api/streams?imdb=' + imdbId + '&type=series&season=' + season + '&episode=' + episode + '&title=' + encodeURIComponent(title))
+  fetch('https://torrentio.strem.fun/stream/series/' + imdbId + ':' + season + ':' + episode + '.json')
     .then(function(r) { return r.json(); })
-    .then(function(streams) { renderStreams(list, streams); })
+    .then(function(data) { renderStreams(list, data.streams || []); })
     .catch(function(e) { list.innerHTML = '<div class="modal-empty" style="color:var(--danger)">Failed: ' + e.message + '</div>'; });
 }
 
@@ -790,9 +795,9 @@ function showStreams(imdbId, type, title) {
   var body = document.getElementById('modalBody');
   body.innerHTML = '<div class="modal-empty">Loading streams from Torrentio...</div>';
   document.getElementById('modalOverlay').classList.add('open');
-  fetch('/api/streams?imdb=' + imdbId + '&type=' + type)
+  fetch('https://torrentio.strem.fun/stream/' + type + '/' + imdbId + '.json')
     .then(function(r) { return r.json(); })
-    .then(function(streams) { renderStreams(body, streams); })
+    .then(function(data) { renderStreams(body, data.streams || []); })
     .catch(function(e) { body.innerHTML = '<div class="modal-empty" style="color:var(--danger)">Failed: ' + e.message + '</div>'; });
 }
 
