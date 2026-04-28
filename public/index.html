@@ -824,7 +824,21 @@ function renderStreams(container, streams) {
     el.innerHTML = '<span class="stream-quality ' + qClass + '">' + q + '</span><div class="stream-info"><div class="stream-name">' + name + '</div>' + (meta ? '<div class="stream-meta">' + meta + '</div>' : '') + '</div>';
     el.onclick = (function(s, n) { return function() {
       var dn = encodeURIComponent((s.behaviorHints && s.behaviorHints.filename) || n);
-      document.getElementById('magnetInput').value = 'magnet:?xt=urn:btih:' + s.infoHash + '&dn=' + dn;
+      var mag = 'magnet:?xt=urn:btih:' + s.infoHash + '&dn=' + dn;
+      // Add trackers from Torrentio sources
+      var trackers = (s.sources || []).filter(function(src){ return src.indexOf('tracker:') === 0; }).map(function(src){ return src.slice(8); });
+      // Always include reliable public trackers
+      var defaults = [
+        'udp://open.demonii.com:1337/announce',
+        'udp://tracker.opentrackr.org:1337/announce',
+        'udp://tracker.openbittorrent.com:6969/announce',
+        'udp://open.stealth.si:80/announce',
+        'udp://tracker.torrent.eu.org:451/announce',
+        'https://tracker.bt-hash.com:443/announce'
+      ];
+      defaults.forEach(function(t){ if (trackers.indexOf(t) === -1) trackers.push(t); });
+      trackers.forEach(function(t){ mag += '&tr=' + encodeURIComponent(t); });
+      document.getElementById('magnetInput').value = mag;
       closeModal();
       loadTorrent();
     }; })(stream, name);
