@@ -351,29 +351,19 @@ const server = http.createServer((req, res) => {
     if (!q) { res.writeHead(400); res.end(JSON.stringify({ error: "Missing q" })); return; }
     (async () => {
       const hdrs = { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", "Accept": "application/json" };
-      const results = [];
-
-      // Movies: YTS API — reliable from all server IPs, no key needed
-      try {
-        const yr = await fetch(`https://yts.mx/api/v2/list_movies.json?query_term=${encodeURIComponent(q)}&limit=6&sort_by=seeds`, { headers: hdrs });
-        const yd = await yr.json();
-        const movies = (yd.data && yd.data.movies) || [];
-        for (const m of movies) {
-          results.push({ id: m.imdb_code, name: m.title, year: String(m.year || ""), poster: m.medium_cover_image || "", type: "movie" });
-        }
-      } catch(e) { /* YTS failed */ }
-
-      // Series: try Cinemeta, fallback to apibay TV search
-      try {
-        const enc = encodeURIComponent(q);
-        const sr = await fetch(`https://v3-cinemeta.strem.io/catalog/series/top/search=${enc}.json`, { headers: hdrs });
-        if (sr.ok) {
-          const sd = await sr.json();
-          const series = (sd.metas || []).slice(0, 4);
-          for (const s of series) results.push({ id: s.id, name: s.name, year: String(s.year || ""), poster: s.poster || "", type: "series" });
-        }
-      } catch(e) { /* Cinemeta blocked, skip series */ }
-
+      const enc = encodeURIComponent(q);
+      const [mr, sr] = await Promise.all([
+        fetch(`https://v3-cinemeta.strem.io/catalog/movie/top/search=${enc}.json`, { headers: hdrs }).catch(() => null),
+        fetch(`https://v3-cinemeta.strem.io/catalog/series/top/search=${enc}.json`, { headers: hdrs }).catch(() => null)
+      ]);
+      const [md, sd] = await Promise.all([
+        mr && mr.ok ? mr.json().catch(() => ({})) : {},
+        sr && sr.ok ? sr.json().catch(() => ({})) : {}
+      ]);
+      const results = [
+        ...(md.metas || []).slice(0, 6).map(m => ({ id: m.id, name: m.name, year: String(m.year || ""), poster: m.poster || "", type: "movie" })),
+        ...(sd.metas || []).slice(0, 4).map(s => ({ id: s.id, name: s.name, year: String(s.year || ""), poster: s.poster || "", type: "series" }))
+      ];
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify(results));
     })().catch(e => { res.writeHead(500); res.end(JSON.stringify({ error: e.message })); });
