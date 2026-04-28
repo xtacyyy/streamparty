@@ -296,10 +296,11 @@ const server = http.createServer((req, res) => {
     }
 
     if (compatMode || !["mp4", "m4v"].includes(ext)) {
-      console.log(`[compat] remuxing: ${activeFile.name}`);
+      console.log(`[compat] remuxing ${ext} -> fmp4: ${activeFile.name}`);
       res.writeHead(200, { "Content-Type": "video/mp4" });
       const ff = Ffmpeg()
-        .input(`http://localhost:${PORT}/stream`)
+        .input(activeFile.createReadStream())
+        .inputFormat(inputFormat)
         .outputOptions([
           "-map 0:v:0", "-map 0:a:0",
           "-c:v copy",
