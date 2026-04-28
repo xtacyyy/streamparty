@@ -213,7 +213,9 @@
         <select id="subTrack" class="track-sel" style="display:none;" onchange="selectSubtitle(this.value)" title="Subtitles">
           <option value="-1">&#128172; Off</option>
         </select>
-        <button class="vid-btn" id="subUrlBtn" style="display:none;font-size:12px;" onclick="toggleSubUrlInput()" title="Load subtitles from URL">+ Sub</button>
+        <input type="file" id="subFileInput" accept=".srt,.vtt" style="display:none;" />
+        <button class="vid-btn" id="subUrlBtn" style="display:none;font-size:12px;" onclick="toggleSubUrlInput()" title="Load subtitle from URL">&#128279; Sub</button>
+        <button class="vid-btn" id="subFileBtn" style="display:none;font-size:12px;" onclick="document.getElementById('subFileInput').click()" title="Upload .srt from your computer">&#128193; Sub</button>
         <button class="vid-btn" onclick="toggleFullscreen()" title="Fullscreen">&#x26F6;</button>
       </div>
     </div>
@@ -463,6 +465,9 @@ function connectWS(id) {
       subSel.value = trackId;
       selectSubtitle(trackId, false);
       sysMsg(msg.sender + ' ' + (trackId === '-1' ? 'turned off subtitles' : 'turned on subtitles'));
+    } else if (msg.type === 'subtitle_upload') {
+      applyUploadedSubtitle(msg.content, msg.filename || 'Shared subtitle');
+      sysMsg(msg.sender + ' shared subtitle: ' + (msg.filename || 'subtitle'));
     }
   };
 
@@ -591,6 +596,20 @@ function initVideoControls(vid) {
   controls.classList.add('visible');
   document.getElementById('playBtn').textContent = '▶';
   document.getElementById('subUrlBtn').style.display = 'inline-block';
+  document.getElementById('subFileBtn').style.display = 'inline-block';
+  document.getElementById('subFileInput').addEventListener('change', function(e) {
+    var file = e.target.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function(ev) {
+      var content = ev.target.result;
+      if (file.name.toLowerCase().endsWith('.srt')) content = clientSrtToVtt(content);
+      applyUploadedSubtitle(content, file.name);
+      wsSend({ type: 'subtitle_upload', content: content, filename: file.name });
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  });
   vid.addEventListener('play', function() { document.getElementById('playBtn').textContent = '⏸'; });
   vid.addEventListener('pause', function() { document.getElementById('playBtn').textContent = '▶'; });
   vid.addEventListener('timeupdate', function() {
@@ -642,6 +661,20 @@ function loadTracks() {
           audSel.style.display = 'inline-block';
         }
         document.getElementById('subUrlBtn').style.display = 'inline-block';
+  document.getElementById('subFileBtn').style.display = 'inline-block';
+  document.getElementById('subFileInput').addEventListener('change', function(e) {
+    var file = e.target.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function(ev) {
+      var content = ev.target.result;
+      if (file.name.toLowerCase().endsWith('.srt')) content = clientSrtToVtt(content);
+      applyUploadedSubtitle(content, file.name);
+      wsSend({ type: 'subtitle_upload', content: content, filename: file.name });
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  });
       }
       if (t.hasAutoSub && !autoSubApplied) { applyAutoSub(); }
       else if (!t.hasAutoSub) { pollAutoSub(0); }
@@ -694,6 +727,35 @@ function loadSubFromUrl() {
   toggleSubUrlInput();
 }
 
+function clientSrtToVtt(srt) {
+  return 'WEBVTT\n\n' + srt
+    .replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+    .replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2')
+    .trim();
+}
+
+function applyUploadedSubtitle(vttContent, filename) {
+  var blob = new Blob([vttContent], { type: 'text/vtt' });
+  var blobUrl = URL.createObjectURL(blob);
+  var subSel = document.getElementById('subTrack');
+  var opt = document.getElementById('sub-upload');
+  if (!opt) { opt = document.createElement('option'); opt.id = 'sub-upload'; subSel.appendChild(opt); }
+  opt.value = 'blob:' + blobUrl; opt.textContent = (filename || 'Uploaded').replace(/\.srt$/i, '');
+  subSel.style.display = 'inline-block';
+  subSel.value = opt.value;
+  var vid = document.getElementById('videoEl');
+  Array.from(vid.querySelectorAll('track')).forEach(function(t) { t.remove(); });
+  var track = document.createElement('track');
+  track.kind = 'subtitles'; track.default = true; track.src = blobUrl;
+  vid.appendChild(track);
+  track.addEventListener('load', function() {
+    for (var i = 0; i < vid.textTracks.length; i++) {
+      vid.textTracks[i].mode = i === 0 ? 'showing' : 'disabled';
+    }
+  });
+  sysMsg('Subtitles loaded: ' + (filename || 'uploaded'));
+}
+
 function selectSubtitle(streamIndex, broadcast) {
   if (broadcast === undefined) broadcast = true;
   var vid = document.getElementById('videoEl');
@@ -702,7 +764,7 @@ function selectSubtitle(streamIndex, broadcast) {
   if (streamIndex === '-1') return;
   var track = document.createElement('track');
   track.kind = 'subtitles'; track.default = true;
-  track.src = String(streamIndex).startsWith('url:') ? streamIndex.replace('url:', '') : '/subtitle/' + streamIndex + '?t=' + Date.now();
+  var si = String(streamIndex); track.src = si.startsWith('blob:') ? si.slice(5) : si.startsWith('url:') ? si.replace('url:', '') : '/subtitle/' + streamIndex + '?t=' + Date.now();
   vid.appendChild(track);
   track.addEventListener('load', function() {
     for (var i = 0; i < vid.textTracks.length; i++) {
