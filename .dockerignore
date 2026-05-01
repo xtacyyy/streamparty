@@ -1,0 +1,8 @@
+node_modules/
+downloads/
+*.log
+.git/
+sync-config.ps1
+push-revert.ps1
+*.ps1
+*.zip
