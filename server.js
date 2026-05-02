@@ -301,7 +301,7 @@ const server = http.createServer((req, res) => {
       console.log(`[compat] ${mode} ${ext} -> fmp4: ${activeFile.name}`);
       res.writeHead(200, { "Content-Type": "video/mp4" });
       const videoOpts = transcodeMode
-        ? ["-c:v libx264", "-preset ultrafast", "-crf 23"]
+        ? ["-c:v libx264", "-preset ultrafast", "-crf 23", "-pix_fmt yuv420p", "-profile:v main", "-level 4.0"]
         : ["-c:v copy"];
       const ff = Ffmpeg()
         .input(activeFile.createReadStream())

@@ -621,19 +621,19 @@ function initVideoControls(vid) {
     document.getElementById('volBar').value = Math.round((vid.muted ? 0 : vid.volume) * 100);
   });
   vid.addEventListener('error', function() {
-    var code = vid.error ? vid.error.code : '?';
-    // Auto-retry with H.264 transcoding for mobile/codec errors
-    if ((code === 3 || code === 4) && vid.src && vid.src.indexOf('transcode=1') === -1) {
-      var sep = vid.src.indexOf('?') === -1 ? '?' : '&';
-      var newSrc = vid.src + sep + 'transcode=1&t=' + Date.now();
+    var code = vid.error ? vid.error.code : 0;
+    // Auto-retry with H.264 transcode on any decode/format error
+    if (code >= 3 && vid.src && vid.src.indexOf('transcode=1') === -1) {
+      var base = vid.src.split('?')[0];
+      var newSrc = base + '?transcode=1&t=' + Date.now();
       setStatus('Re-encoding for your device...');
       vid.src = newSrc;
       vid.load();
       vid.play().catch(function(){});
       return;
     }
-    var msg = (code === 3 || code === 4)
-      ? 'Cannot decode this video format. Error: ' + (vid.error && vid.error.message)
+    var msg = code >= 3
+      ? 'Cannot decode this video format.'
       : 'Video error: ' + (vid.error && vid.error.message || 'unknown');
     setStatus(msg); toast(msg, 6000);
   });
