@@ -483,7 +483,12 @@ function wsSend(data) {
 }
 
 function createRoom() {
-  roomId = Math.random().toString(36).slice(2, 10);
+  var adj = ['swift','brave','calm','dark','epic','fast','gold','icy','jolly','kind','lush','misty','neon','odd','pink','quiet','rosy','sly','teal','ultra','vivid','wild','zesty','amber','breezy','crisp','dewy','emerald','fuzzy','hazy','indie','jazzy','keen','lazy','moody','nifty','orange','prime','quirky','rusty','snowy','tangy','urban','velvet','witty','young','zippy'];
+  var noun = ['room','wave','spark','vibe','moon','star','dawn','dusk','haze','peak','reef','glow','sage','oak','fox','wolf','hawk','bear','crow','lynx','fern','moss','jade','ruby','onyx','echo','flux','hue','iris','jest'];
+  var a1 = adj[Math.floor(Math.random()*adj.length)];
+  var a2 = adj[Math.floor(Math.random()*adj.length)];
+  var n = noun[Math.floor(Math.random()*noun.length)];
+  roomId = a1 + '-' + a2 + '-' + n;
   members = [];
   connectWS(roomId);
   updateRoomUI();
