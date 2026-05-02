@@ -295,15 +295,20 @@ const server = http.createServer((req, res) => {
       return;
     }
 
+    const transcodeMode = u.searchParams.get("transcode") === "1";
     if (compatMode || !["mp4", "m4v"].includes(ext)) {
-      console.log(`[compat] remuxing ${ext} -> fmp4: ${activeFile.name}`);
+      const mode = transcodeMode ? "transcode->h264" : "remux";
+      console.log(`[compat] ${mode} ${ext} -> fmp4: ${activeFile.name}`);
       res.writeHead(200, { "Content-Type": "video/mp4" });
+      const videoOpts = transcodeMode
+        ? ["-c:v libx264", "-preset ultrafast", "-crf 23"]
+        : ["-c:v copy"];
       const ff = Ffmpeg()
         .input(activeFile.createReadStream())
         .inputFormat(inputFormat)
         .outputOptions([
           "-map 0:v:0", "-map 0:a:0",
-          "-c:v copy",
+          ...videoOpts,
           "-c:a aac", "-ac 2", "-b:a 192k",
           "-f mp4", "-movflags frag_keyframe+empty_moov+default_base_moof"
         ])
