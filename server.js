@@ -17,7 +17,7 @@ Ffmpeg.setFfprobePath(ffprobeStatic.path);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
 const client = new WebTorrent();
-const DOWNLOADS_PATH = DOWNLOADS_PATH;
+const DOWNLOADS_PATH = path.join(__dirname, "downloads");
 
 function getDirSize(dir) {
   let size = 0;
