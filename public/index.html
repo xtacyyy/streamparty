@@ -662,20 +662,36 @@ function initVideoControls(vid) {
   });
   vid.addEventListener('error', function() {
     var code = vid.error ? vid.error.code : 0;
-    // Auto-retry with H.264 transcode on any decode/format error
+    var msg = (vid.error && vid.error.message) || '';
+    // PIPELINE_ERROR_READ = data source error, torrent still buffering — retry stream
+    var isReadError = msg.indexOf('PIPELINE_ERROR_READ') !== -1 || msg.indexOf('data source error') !== -1 || msg.indexOf('DEMUXER_ERROR_NO_SUPPORTED') !== -1;
+    if (isReadError && vid.src) {
+      var retries = (vid._readRetries || 0);
+      if (retries < 4) {
+        vid._readRetries = retries + 1;
+        var delay = (retries + 1) * 2000;
+        setStatus('Buffering... retrying in ' + ((delay/1000)|0) + 's');
+        setTimeout(function() {
+          var base = vid.src.split('?')[0];
+          var hasTrans = vid.src.indexOf('transcode=1') !== -1;
+          vid.src = base + (hasTrans ? '?transcode=1&' : '?') + 't=' + Date.now();
+          vid.load();
+          vid.play().catch(function(){});
+        }, delay);
+        return;
+      }
+    }
+    // Codec/format error — retry with H.264 transcode
     if (code >= 3 && vid.src && vid.src.indexOf('transcode=1') === -1) {
       var base = vid.src.split('?')[0];
-      var newSrc = base + '?transcode=1&t=' + Date.now();
+      vid.src = base + '?transcode=1&t=' + Date.now();
       setStatus('Re-encoding for your device...');
-      vid.src = newSrc;
       vid.load();
       vid.play().catch(function(){});
       return;
     }
-    var msg = code >= 3
-      ? 'Cannot decode this video format.'
-      : 'Video error: ' + (vid.error && vid.error.message || 'unknown');
-    setStatus(msg); toast(msg, 6000);
+    var errMsg = code >= 3 ? 'Cannot decode this video format.' : 'Video error: ' + (msg || 'unknown');
+    setStatus(errMsg); toast(errMsg, 6000);
   });
 }
 
