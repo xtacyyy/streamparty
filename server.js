@@ -17,6 +17,57 @@ Ffmpeg.setFfprobePath(ffprobeStatic.path);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
 const client = new WebTorrent();
+const DOWNLOADS_PATH = DOWNLOADS_PATH;
+
+// Wipe orphaned downloads on startup (files left from previous runs)
+function cleanDownloads() {
+  try {
+    if (!fs.existsSync(DOWNLOADS_PATH)) { fs.mkdirSync(DOWNLOADS_PATH, { recursive: true }); return; }
+    let deleted = 0, freed = 0;
+    for (const entry of fs.readdirSync(DOWNLOADS_PATH)) {
+      const full = path.join(DOWNLOADS_PATH, entry);
+      try {
+        const stat = fs.statSync(full);
+        freed += stat.isDirectory() ? getDirSize(full) : stat.size;
+        fs.rmSync(full, { recursive: true, force: true });
+        deleted++;
+      } catch(e) {}
+    }
+    if (deleted) console.log(`[cleanup] removed ${deleted} item(s), freed ${(freed/1024/1024/1024).toFixed(2)} GB`);
+  } catch(e) { console.error("[cleanup] error:", e.message); }
+}
+
+function getDirSize(dir) {
+  let size = 0;
+  try {
+    for (const f of fs.readdirSync(dir)) {
+      const full = path.join(dir, f);
+      const s = fs.statSync(full);
+      size += s.isDirectory() ? getDirSize(full) : s.size;
+    }
+  } catch(e) {}
+  return size;
+}
+
+// Check disk usage every 10 minutes, clean if >85% full
+function checkDisk() {
+  try {
+    const stat = fs.statfsSync(DOWNLOADS_PATH);
+    const used = 1 - (stat.bfree / stat.blocks);
+    if (used > 0.85) {
+      console.log(`[disk] usage at ${(used*100).toFixed(0)}%, cleaning downloads`);
+      if (activeTorrent) {
+        try { client.remove(activeTorrent.infoHash, { destroyStore: true }); } catch(e) {}
+        activeTorrent = null; activeFile = null; activeTrackInfo = null;
+        activeSubtitleFiles = []; autoSubContent = null;
+      }
+      cleanDownloads();
+    }
+  } catch(e) {}
+}
+
+cleanDownloads();
+setInterval(checkDisk, 10 * 60 * 1000);
 let activeTorrent = null;
 let activeFile = null;
 let activeTrackInfo = null;
@@ -131,7 +182,7 @@ const server = http.createServer((req, res) => {
       }
 
       if (activeTorrent) {
-        try { client.remove(activeTorrent.infoHash); } catch (e) {}
+        try { client.remove(activeTorrent.infoHash, { destroyStore: true }); } catch (e) {}
         activeTorrent = null;
         activeFile = null;
         activeTrackInfo = null;
@@ -193,7 +244,7 @@ const server = http.createServer((req, res) => {
         }, 3000);
       };
 
-      client.add(magnet, { path: path.join(__dirname, "downloads") }, setupTorrent);
+      client.add(magnet, { path: DOWNLOADS_PATH }, setupTorrent);
       client.once("error", e => console.error("[torrent] error:", e.message));
 
       res.writeHead(200, { "Content-Type": "application/json" });
