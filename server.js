@@ -19,24 +19,6 @@ const PORT = process.env.PORT || 3000;
 const client = new WebTorrent();
 const DOWNLOADS_PATH = DOWNLOADS_PATH;
 
-// Wipe orphaned downloads on startup (files left from previous runs)
-function cleanDownloads() {
-  try {
-    if (!fs.existsSync(DOWNLOADS_PATH)) { fs.mkdirSync(DOWNLOADS_PATH, { recursive: true }); return; }
-    let deleted = 0, freed = 0;
-    for (const entry of fs.readdirSync(DOWNLOADS_PATH)) {
-      const full = path.join(DOWNLOADS_PATH, entry);
-      try {
-        const stat = fs.statSync(full);
-        freed += stat.isDirectory() ? getDirSize(full) : stat.size;
-        fs.rmSync(full, { recursive: true, force: true });
-        deleted++;
-      } catch(e) {}
-    }
-    if (deleted) console.log(`[cleanup] removed ${deleted} item(s), freed ${(freed/1024/1024/1024).toFixed(2)} GB`);
-  } catch(e) { console.error("[cleanup] error:", e.message); }
-}
-
 function getDirSize(dir) {
   let size = 0;
   try {
@@ -49,24 +31,43 @@ function getDirSize(dir) {
   return size;
 }
 
-// Check disk usage every 10 minutes, clean if >85% full
-function checkDisk() {
+function getDiskUsage() {
   try {
     const stat = fs.statfsSync(DOWNLOADS_PATH);
-    const used = 1 - (stat.bfree / stat.blocks);
-    if (used > 0.85) {
-      console.log(`[disk] usage at ${(used*100).toFixed(0)}%, cleaning downloads`);
-      if (activeTorrent) {
-        try { client.remove(activeTorrent.infoHash, { destroyStore: true }); } catch(e) {}
-        activeTorrent = null; activeFile = null; activeTrackInfo = null;
-        activeSubtitleFiles = []; autoSubContent = null;
-      }
-      cleanDownloads();
-    }
-  } catch(e) {}
+    return 1 - (stat.bfree / stat.blocks);
+  } catch(e) { return 0; }
 }
 
-cleanDownloads();
+// Check disk every 10 min — if >80%, delete oldest files until back below 80%
+function checkDisk() {
+  try {
+    if (!fs.existsSync(DOWNLOADS_PATH)) return;
+    let usage = getDiskUsage();
+    if (usage <= 0.80) return;
+    console.log(`[disk] usage at ${(usage*100).toFixed(0)}%, pruning oldest files...`);
+
+    // Collect all entries with mtime, sorted oldest first
+    const entries = [];
+    for (const entry of fs.readdirSync(DOWNLOADS_PATH)) {
+      const full = path.join(DOWNLOADS_PATH, entry);
+      try { entries.push({ full, mtime: fs.statSync(full).mtimeMs }); } catch(e) {}
+    }
+    entries.sort((a, b) => a.mtime - b.mtime);
+
+    for (const entry of entries) {
+      if (getDiskUsage() <= 0.80) break;
+      // Skip active torrent's folder
+      const activeDir = activeTorrent ? path.join(DOWNLOADS_PATH, activeTorrent.name) : null;
+      if (activeDir && entry.full === activeDir) continue;
+      try {
+        fs.rmSync(entry.full, { recursive: true, force: true });
+        console.log(`[disk] deleted: ${path.basename(entry.full)}, usage now ${(getDiskUsage()*100).toFixed(0)}%`);
+      } catch(e) {}
+    }
+  } catch(e) { console.error("[disk] check error:", e.message); }
+}
+
+if (!fs.existsSync(DOWNLOADS_PATH)) fs.mkdirSync(DOWNLOADS_PATH, { recursive: true });
 setInterval(checkDisk, 10 * 60 * 1000);
 let activeTorrent = null;
 let activeFile = null;
