@@ -471,7 +471,7 @@ function connectWS(id) {
     }
   };
 
-  ws.onclose = function() { sysMsg('Disconnected from room'); };
+  ws.onclose = function() { sysMsg('Disconnected from room'); saveSession(roomId); };
   ws.onerror = function() { sysMsg('WebSocket error'); };
 }
 
@@ -482,11 +482,50 @@ function wsSend(data) {
   }
 }
 
+function saveSession(id) {
+  try { localStorage.setItem('flikroom_session', JSON.stringify({ roomId: id, name: document.getElementById('nameInput').value.trim() })); } catch(e) {}
+}
+
+function clearSession() {
+  try { localStorage.removeItem('flikroom_session'); } catch(e) {}
+}
+
+function checkSession() {
+  try {
+    var s = JSON.parse(localStorage.getItem('flikroom_session') || 'null');
+    if (!s || !s.roomId) return;
+    var banner = document.createElement('div');
+    banner.id = 'rejoin-banner';
+    banner.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--surface2);border:1px solid var(--border2);border-radius:12px;padding:12px 20px;display:flex;align-items:center;gap:12px;z-index:999;box-shadow:0 4px 24px rgba(0,0,0,0.5);font-size:13px;color:var(--text2);';
+    banner.innerHTML = '&#127916; Rejoin room <strong style="color:var(--accent2);margin:0 4px;">' + s.roomId + '</strong>?'
+      + '<button onclick="doRejoin()" style="background:var(--accent);color:#fff;border:none;border-radius:8px;padding:5px 14px;cursor:pointer;font-size:12px;font-weight:700;">Rejoin</button>'
+      + '<button onclick="dismissRejoin()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:16px;padding:0 4px;">&#x2715;</button>';
+    document.body.appendChild(banner);
+    window._pendingSession = s;
+  } catch(e) {}
+}
+
+function doRejoin() {
+  var s = window._pendingSession;
+  if (!s) return;
+  dismissRejoin();
+  if (s.name) document.getElementById('nameInput').value = s.name;
+  document.getElementById('joinInput').value = s.roomId;
+  joinRoom();
+}
+
+function dismissRejoin() {
+  var b = document.getElementById('rejoin-banner');
+  if (b) b.remove();
+  clearSession();
+}
+
 function createRoom() {
   roomId = String(Math.floor(Math.random() * 90000) + 10000);
   members = [];
   connectWS(roomId);
   updateRoomUI();
+  saveSession(roomId);
   sysMsg('Room created! ID: <strong style="color:var(--accent2);font-family:var(--mono)">' + roomId + '</strong>');
   copyRoomId();
 }
@@ -498,6 +537,7 @@ function joinRoom() {
   members = [];
   connectWS(roomId);
   updateRoomUI();
+  saveSession(roomId);
   sysMsg('Joining room <strong style="color:var(--accent2)">' + target + '</strong>');
 }
 
@@ -932,6 +972,7 @@ function sendChat() {
 }
 
 updateAvatars();
+  checkSession();
 </script>
 </body>
 </html>
