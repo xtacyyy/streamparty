@@ -184,9 +184,9 @@ const server = http.createServer((req, res) => {
         const parsed = JSON.parse(body);
         magnet = parsed.magnet;
         roomId = parsed.roomId;
-      } catch (e) { res.writeHead(400); res.end(JSON.stringify({ error: "Invalid JSON" })); return; }
-      if (!magnet) { res.writeHead(400); res.end(JSON.stringify({ error: "Missing magnet" })); return; }
-      if (!roomId) { res.writeHead(400); res.end(JSON.stringify({ error: "Missing roomId" })); return; }
+      } catch (e) { res.writeHead(400, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error: "Invalid JSON" })); return; }
+      if (!magnet) { res.writeHead(400, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error: "Missing magnet" })); return; }
+      if (!roomId) { res.writeHead(400, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error: "Missing roomId" })); return; }
 
       const rs = initRoomState(roomId);
       const newHash = infoHashFromMagnet(magnet);
@@ -265,13 +265,21 @@ const server = http.createServer((req, res) => {
       };
 
       // Reuse torrent if another room is already downloading same hash
-      const existingTorrent = newHash ? client.get(newHash) : null;
+      const existingTorrent = newHash
+        ? (client.torrents.find(t => t.infoHash === newHash) || null)
+        : null;
       if (existingTorrent) {
         console.log(`[torrent][${roomId}] reusing existing torrent ${newHash}`);
         setupTorrent(existingTorrent);
       } else {
-        client.add(magnet, { path: DOWNLOADS_PATH }, setupTorrent);
-        client.once("error", e => console.error(`[torrent][${roomId}] error:`, e.message));
+        try {
+          client.add(magnet, { path: DOWNLOADS_PATH }, setupTorrent);
+        } catch (e) {
+          console.error(`[torrent][${roomId}] client.add error:`, e.message);
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Failed to add torrent: " + e.message }));
+          return;
+        }
       }
 
       res.writeHead(200, { "Content-Type": "application/json" });
@@ -535,19 +543,4 @@ wss.on("connection", (ws) => {
       if (rooms[rid].size === 0) {
         delete rooms[rid];
         // Delay cleanup to tolerate quick reconnects / page refreshes
-        setTimeout(() => {
-          if (!rooms[rid]) cleanupRoomTorrent(rid);
-        }, 30000);
-      }
-    }
-  });
-});
-
-function broadcast(roomId, sender, data) {
-  if (!rooms[roomId]) return;
-  for (const ws of rooms[roomId]) {
-    if (ws !== sender && ws.readyState === 1) ws.send(data);
-  }
-}
-
-server.listen(PORT, () => console.log(`\n  flikroom running at http://localhost:${PORT}\n`));
+        set
