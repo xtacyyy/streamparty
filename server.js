@@ -16,67 +16,59 @@ Ffmpeg.setFfprobePath(ffprobeStatic.path);
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
-const client = new WebTorrent();
 const DOWNLOADS_PATH = path.join(__dirname, "downloads");
-
-function getDirSize(dir) {
-  let size = 0;
-  try {
-    for (const f of fs.readdirSync(dir)) {
-      const full = path.join(dir, f);
-      const s = fs.statSync(full);
-      size += s.isDirectory() ? getDirSize(full) : s.size;
-    }
-  } catch(e) {}
-  return size;
-}
-
-function getDiskUsage() {
-  try {
-    const stat = fs.statfsSync(DOWNLOADS_PATH);
-    return 1 - (stat.bfree / stat.blocks);
-  } catch(e) { return 0; }
-}
-
-// Check disk every 10 min — if >80%, delete oldest files until back below 80%
-function checkDisk() {
-  try {
-    if (!fs.existsSync(DOWNLOADS_PATH)) return;
-    let usage = getDiskUsage();
-    if (usage <= 0.80) return;
-    console.log(`[disk] usage at ${(usage*100).toFixed(0)}%, pruning oldest files...`);
-
-    // Collect all entries with mtime, sorted oldest first
-    const entries = [];
-    for (const entry of fs.readdirSync(DOWNLOADS_PATH)) {
-      const full = path.join(DOWNLOADS_PATH, entry);
-      try { entries.push({ full, mtime: fs.statSync(full).mtimeMs }); } catch(e) {}
-    }
-    entries.sort((a, b) => a.mtime - b.mtime);
-
-    for (const entry of entries) {
-      if (getDiskUsage() <= 0.80) break;
-      // Skip active torrent's folder
-      const activeDir = activeTorrent ? path.join(DOWNLOADS_PATH, activeTorrent.name) : null;
-      if (activeDir && entry.full === activeDir) continue;
-      try {
-        fs.rmSync(entry.full, { recursive: true, force: true });
-        console.log(`[disk] deleted: ${path.basename(entry.full)}, usage now ${(getDiskUsage()*100).toFixed(0)}%`);
-      } catch(e) {}
-    }
-  } catch(e) { console.error("[disk] check error:", e.message); }
-}
-
-if (!fs.existsSync(DOWNLOADS_PATH)) fs.mkdirSync(DOWNLOADS_PATH, { recursive: true });
-setInterval(checkDisk, 10 * 60 * 1000);
-let activeTorrent = null;
-let activeFile = null;
-let activeTrackInfo = null;
-let activeSubtitleFiles = [];
-let autoSubContent = null;
+const client = new WebTorrent();
 
 const SUBTITLE_EXTS = ["srt", "vtt", "ass", "ssa"];
+const VIDEO_EXTS = ["mp4", "mkv", "webm", "avi", "mov", "m4v", "ogv", "ogg", "ts"];
 
+// ── Per-room WebSocket connections ──
+const rooms = {};
+
+// ── Per-room torrent state ──
+// roomTorrents[roomId] = { torrent, file, trackInfo, subtitleFiles, autoSubContent }
+const roomTorrents = {};
+
+function getRoomState(roomId) {
+  return roomTorrents[roomId] || null;
+}
+
+function initRoomState(roomId) {
+  if (!roomTorrents[roomId]) {
+    roomTorrents[roomId] = {
+      torrent: null, file: null, trackInfo: null,
+      subtitleFiles: [], autoSubContent: null
+    };
+  }
+  return roomTorrents[roomId];
+}
+
+function getActiveTorrentDirs() {
+  const dirs = new Set();
+  for (const rs of Object.values(roomTorrents)) {
+    if (rs.torrent?.name) dirs.add(path.join(DOWNLOADS_PATH, rs.torrent.name));
+  }
+  return dirs;
+}
+
+function cleanupRoomTorrent(roomId) {
+  const rs = roomTorrents[roomId];
+  if (!rs) return;
+  if (rs.torrent) {
+    const infoHash = rs.torrent.infoHash;
+    const sharedByOther = Object.entries(roomTorrents).some(
+      ([id, s]) => id !== roomId && s.torrent?.infoHash === infoHash
+    );
+    if (!sharedByOther) {
+      try { client.remove(infoHash, { destroyStore: false }); } catch (e) {}
+      console.log(`[torrent] removed ${infoHash} (no more rooms using it)`);
+    }
+  }
+  delete roomTorrents[roomId];
+  console.log(`[room] torrent state cleaned up for ${roomId}`);
+}
+
+// ── Utilities ──
 function srtToVtt(srt) {
   return "WEBVTT\n\n" + srt
     .replace(/\r\n/g, "\n")
@@ -100,43 +92,31 @@ function parseMovieInfo(filename) {
 async function fetchAutoSubtitle(filename) {
   const apiKey = process.env.SUBDL_API_KEY;
   if (!apiKey) { console.log("[sub-auto] no SUBDL_API_KEY set, skipping"); return null; }
-
   const { title, year } = parseMovieInfo(filename);
   if (!title) return null;
   console.log(`[sub-auto] searching subdl: "${title}" (${year || "?"})`);
-
   try {
     const params = new URLSearchParams({ api_key: apiKey, film_name: title, languages: "EN", type: "movie" });
     if (year) params.set("year", year);
-
     const searchRes = await fetch(`https://api.subdl.com/api/v1/subtitles?${params}`);
     const searchData = await searchRes.json();
-
-    if (!searchData.status || !searchData.subtitles?.length) {
-      console.log("[sub-auto] no results from subdl");
-      return null;
-    }
-
+    if (!searchData.status || !searchData.subtitles?.length) { console.log("[sub-auto] no results from subdl"); return null; }
     const sub = searchData.subtitles.find(s => s.language === "EN") || searchData.subtitles[0];
     if (!sub?.url) { console.log("[sub-auto] no download URL in result"); return null; }
-
     const zipUrl = `https://dl.subdl.com${sub.url}`;
     console.log(`[sub-auto] downloading zip: ${zipUrl}`);
     const zipRes = await fetch(zipUrl);
     if (!zipRes.ok) { console.log("[sub-auto] zip download failed:", zipRes.status); return null; }
-
     const zipBuffer = Buffer.from(await zipRes.arrayBuffer());
     const zip = new AdmZip(zipBuffer);
     const entries = zip.getEntries();
-
     const srtEntry = entries.find(e => e.entryName.toLowerCase().endsWith(".srt"));
     if (!srtEntry) { console.log("[sub-auto] no .srt found inside zip"); return null; }
-
     const srtContent = srtEntry.getData().toString("utf8");
     const vtt = srtToVtt(srtContent);
     console.log(`[sub-auto] fetched "${srtEntry.entryName}" (${srtContent.length} bytes)`);
     return vtt;
-  } catch(e) {
+  } catch (e) {
     console.log("[sub-auto] error:", e.message);
     return null;
   }
@@ -147,9 +127,6 @@ function infoHashFromMagnet(magnet) {
   return m ? m[1].toLowerCase() : null;
 }
 
-const VIDEO_EXTS = ["mp4", "mkv", "webm", "avi", "mov", "m4v", "ogv", "ogg", "ts"];
-const rooms = {};
-
 function findVideoFile(torrent) {
   return torrent.files.reduce((best, f) => {
     const ext = f.name.split(".").pop().toLowerCase();
@@ -158,6 +135,37 @@ function findVideoFile(torrent) {
   }, null);
 }
 
+// ── Disk cleanup ──
+function getDiskUsage() {
+  try {
+    const stat = fs.statfsSync(DOWNLOADS_PATH);
+    return 1 - (stat.bfree / stat.blocks);
+  } catch (e) { return 0; }
+}
+
+function checkDisk() {
+  try {
+    if (!fs.existsSync(DOWNLOADS_PATH)) return;
+    const usage = getDiskUsage();
+    if (usage <= 0.80) return;
+    console.log(`[disk] usage ${Math.round(usage * 100)}% > 80%, cleaning...`);
+    const activeDirs = getActiveTorrentDirs();
+    const entries = [];
+    for (const entry of fs.readdirSync(DOWNLOADS_PATH)) {
+      const full = path.join(DOWNLOADS_PATH, entry);
+      try { entries.push({ full, mtime: fs.statSync(full).mtimeMs }); } catch (e) {}
+    }
+    entries.sort((a, b) => a.mtime - b.mtime);
+    for (const entry of entries) {
+      if (getDiskUsage() <= 0.80) break;
+      if (activeDirs.has(entry.full)) continue;
+      try { fs.rmSync(entry.full, { recursive: true, force: true }); console.log(`[disk] removed ${entry.full}`); } catch (e) {}
+    }
+  } catch (e) { console.error("[disk] cleanup error:", e.message); }
+}
+setInterval(checkDisk, 10 * 60 * 1000);
+
+// ── HTTP Server ──
 const server = http.createServer((req, res) => {
   const u = new URL(req.url, "http://localhost");
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -166,68 +174,79 @@ const server = http.createServer((req, res) => {
   res.setHeader("Access-Control-Expose-Headers", "Content-Range, Content-Length, Accept-Ranges");
   if (req.method === "OPTIONS") { res.writeHead(204); res.end(); return; }
 
+  // ── POST /api/load ──
   if (req.method === "POST" && u.pathname === "/api/load") {
     let body = "";
     req.on("data", d => body += d);
     req.on("end", () => {
-      let magnet;
-      try { magnet = JSON.parse(body).magnet; } catch (e) { res.writeHead(400); res.end(JSON.stringify({ error: "Invalid JSON" })); return; }
+      let magnet, roomId;
+      try {
+        const parsed = JSON.parse(body);
+        magnet = parsed.magnet;
+        roomId = parsed.roomId;
+      } catch (e) { res.writeHead(400); res.end(JSON.stringify({ error: "Invalid JSON" })); return; }
       if (!magnet) { res.writeHead(400); res.end(JSON.stringify({ error: "Missing magnet" })); return; }
+      if (!roomId) { res.writeHead(400); res.end(JSON.stringify({ error: "Missing roomId" })); return; }
+
+      const rs = initRoomState(roomId);
       const newHash = infoHashFromMagnet(magnet);
-      const curHash = activeTorrent?.infoHash?.toLowerCase();
+      const curHash = rs.torrent?.infoHash?.toLowerCase();
+
+      // Same torrent already active for this room — no-op
       if (newHash && curHash && newHash === curHash) {
-        console.log("[torrent] already active, skipping reload");
+        console.log(`[torrent][${roomId}] already active, skipping reload`);
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: true, loading: !activeFile }));
+        res.end(JSON.stringify({ ok: true, loading: !rs.file }));
         return;
       }
 
-      if (activeTorrent) {
-        try { client.remove(activeTorrent.infoHash, { destroyStore: true }); } catch (e) {}
-        activeTorrent = null;
-        activeFile = null;
-        activeTrackInfo = null;
-        activeSubtitleFiles = [];
-        autoSubContent = null;
+      // Remove previous torrent for this room (but only if no other room uses it)
+      if (rs.torrent) {
+        const oldHash = rs.torrent.infoHash;
+        const sharedByOther = Object.entries(roomTorrents).some(
+          ([id, s]) => id !== roomId && s.torrent?.infoHash === oldHash
+        );
+        if (!sharedByOther) {
+          try { client.remove(oldHash, { destroyStore: false }); } catch (e) {}
+        }
+        rs.torrent = null; rs.file = null; rs.trackInfo = null;
+        rs.subtitleFiles = []; rs.autoSubContent = null;
       }
-      console.log("[torrent] loading:", magnet.slice(0, 80));
+
+      console.log(`[torrent][${roomId}] loading: ${magnet.slice(0, 80)}`);
 
       const setupTorrent = (torrent) => {
-        activeTorrent = torrent;
-        activeTrackInfo = null;
-        activeSubtitleFiles = [];
-        autoSubContent = null;
+        rs.torrent = torrent;
+        rs.trackInfo = null; rs.subtitleFiles = []; rs.autoSubContent = null;
         const file = findVideoFile(torrent);
-        if (!file) { console.log("[torrent] no video file found"); return; }
-        activeFile = file;
+        if (!file) { console.log(`[torrent][${roomId}] no video file found`); return; }
+        rs.file = file;
 
-        activeSubtitleFiles = torrent.files.filter(f => {
-          const ext = f.name.split(".").pop().toLowerCase();
-          return SUBTITLE_EXTS.includes(ext);
-        });
-        activeSubtitleFiles.forEach(f => f.select());
-        if (activeSubtitleFiles.length) console.log(`[torrent] found ${activeSubtitleFiles.length} subtitle file(s):`, activeSubtitleFiles.map(f => f.name).join(", "));
+        rs.subtitleFiles = torrent.files.filter(f => SUBTITLE_EXTS.includes(f.name.split(".").pop().toLowerCase()));
+        rs.subtitleFiles.forEach(f => f.select());
+        if (rs.subtitleFiles.length) console.log(`[torrent][${roomId}] ${rs.subtitleFiles.length} subtitle file(s)`);
 
         torrent.files.forEach(f => {
-          if (f === file || activeSubtitleFiles.includes(f)) return;
+          if (f === file || rs.subtitleFiles.includes(f)) return;
           f.deselect();
         });
         torrent.strategy = "sequential";
         const pieceCount = torrent.pieces.length;
         const criticalEnd = Math.max(10, Math.floor(pieceCount * 0.1));
-        try { torrent.critical(0, criticalEnd); } catch(e) {}
-        console.log("[torrent] ready:", file.name, "| pieces:", pieceCount, "| critical: 0-" + criticalEnd);
+        try { torrent.critical(0, criticalEnd); } catch (e) {}
+        console.log(`[torrent][${roomId}] ready: ${file.name} | pieces: ${pieceCount} | critical: 0-${criticalEnd}`);
 
-        fetchAutoSubtitle(file.name).then(vtt => { autoSubContent = vtt; });
+        fetchAutoSubtitle(file.name).then(vtt => { rs.autoSubContent = vtt; });
 
-        const externalSubs = activeSubtitleFiles.map((f, i) => ({
+        const externalSubs = rs.subtitleFiles.map((f, i) => ({
           index: `ext:${i}`,
           lang: "und",
           title: f.name.replace(/\.[^.]+$/, "").replace(/\./g, " ").trim()
         }));
 
+        // Probe embedded tracks after short delay
         setTimeout(() => {
-          Ffmpeg.ffprobe(`http://localhost:${PORT}/stream`, (err, meta) => {
+          Ffmpeg.ffprobe(`http://localhost:${PORT}/stream?room=${encodeURIComponent(roomId)}`, (err, meta) => {
             const streams = err ? [] : (meta.streams || []);
             const embeddedSubs = streams.filter(s => s.codec_type === "subtitle").map(s => ({
               index: s.index,
@@ -239,14 +258,21 @@ const server = http.createServer((req, res) => {
               lang: s.tags?.language || "und",
               title: s.tags?.title || (s.tags?.language ? s.tags.language.toUpperCase() : `Track ${i + 1}`)
             }));
-            activeTrackInfo = { subtitles: [...externalSubs, ...embeddedSubs], audio };
-            console.log(`[tracks] ${activeTrackInfo.subtitles.length} subtitle(s), ${activeTrackInfo.audio.length} audio track(s)`);
+            rs.trackInfo = { subtitles: [...externalSubs, ...embeddedSubs], audio };
+            console.log(`[tracks][${roomId}] ${rs.trackInfo.subtitles.length} subtitle(s), ${rs.trackInfo.audio.length} audio track(s)`);
           });
         }, 3000);
       };
 
-      client.add(magnet, { path: DOWNLOADS_PATH }, setupTorrent);
-      client.once("error", e => console.error("[torrent] error:", e.message));
+      // Reuse torrent if another room is already downloading same hash
+      const existingTorrent = newHash ? client.get(newHash) : null;
+      if (existingTorrent) {
+        console.log(`[torrent][${roomId}] reusing existing torrent ${newHash}`);
+        setupTorrent(existingTorrent);
+      } else {
+        client.add(magnet, { path: DOWNLOADS_PATH }, setupTorrent);
+        client.once("error", e => console.error(`[torrent][${roomId}] error:`, e.message));
+      }
 
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true, loading: true }));
@@ -254,30 +280,39 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // ── GET /api/tracks ──
   if (req.method === "GET" && u.pathname === "/api/tracks") {
+    const roomId = u.searchParams.get("room");
+    const rs = roomId ? getRoomState(roomId) : null;
     res.writeHead(200, { "Content-Type": "application/json" });
-    const trackData = activeTrackInfo || { subtitles: [], audio: [], probing: !!activeFile };
-    res.end(JSON.stringify({ ...trackData, hasAutoSub: !!autoSubContent }));
+    const trackData = rs?.trackInfo || { subtitles: [], audio: [], probing: !!(rs?.file) };
+    res.end(JSON.stringify({ ...trackData, hasAutoSub: !!(rs?.autoSubContent) }));
     return;
   }
 
+  // ── GET /subtitle/auto ──
   if (req.method === "GET" && u.pathname === "/subtitle/auto") {
-    if (!autoSubContent) { res.writeHead(404); res.end("No auto subtitle available"); return; }
+    const roomId = u.searchParams.get("room");
+    const rs = roomId ? getRoomState(roomId) : null;
+    if (!rs?.autoSubContent) { res.writeHead(404); res.end("No auto subtitle available"); return; }
     res.writeHead(200, { "Content-Type": "text/vtt; charset=utf-8", "Access-Control-Allow-Origin": "*" });
-    res.end(autoSubContent);
+    res.end(rs.autoSubContent);
     return;
   }
 
+  // ── GET /subtitle/:trackId ──
   if (req.method === "GET" && u.pathname.startsWith("/subtitle/")) {
+    const roomId = u.searchParams.get("room");
+    const rs = roomId ? getRoomState(roomId) : null;
     const trackId = u.pathname.split("/")[2];
-    if (!activeFile) { res.writeHead(404); res.end("Not found"); return; }
+    if (!rs?.file) { res.writeHead(404); res.end("Not found"); return; }
 
     res.setHeader("Content-Type", "text/vtt; charset=utf-8");
     res.setHeader("Access-Control-Allow-Origin", "*");
 
     if (trackId.startsWith("ext:")) {
       const extIdx = parseInt(trackId.replace("ext:", ""));
-      const subFile = activeSubtitleFiles[extIdx];
+      const subFile = rs.subtitleFiles[extIdx];
       if (!subFile) { res.writeHead(404); res.end("Subtitle file not found"); return; }
       res.writeHead(200);
       const fileExt = subFile.name.split(".").pop().toLowerCase();
@@ -295,45 +330,55 @@ const server = http.createServer((req, res) => {
 
     const idx = parseInt(trackId);
     if (isNaN(idx)) { res.writeHead(400); res.end("Bad track id"); return; }
-    const videoExt = activeFile.name.split(".").pop().toLowerCase();
+    const videoExt = rs.file.name.split(".").pop().toLowerCase();
     const inputFormat = videoExt === "mkv" ? "matroska" : videoExt;
     res.writeHead(200);
     const ff = Ffmpeg()
-      .input(activeFile.createReadStream())
+      .input(rs.file.createReadStream())
       .inputFormat(inputFormat)
       .outputOptions([`-map 0:${idx}`, "-f webvtt"])
-      .on("error", e => { console.error("[sub]", e.message); try { res.end(); } catch(_) {} })
+      .on("error", e => { console.error("[sub]", e.message); try { res.end(); } catch (_) {} })
       .pipe(res, { end: true });
-    req.on("close", () => { try { ff.kill("SIGKILL"); } catch(_) {} });
+    req.on("close", () => { try { ff.kill("SIGKILL"); } catch (_) {} });
     return;
   }
 
+  // ── GET /api/status ──
   if (req.method === "GET" && u.pathname === "/api/status") {
-    if (!activeTorrent) { res.writeHead(200); res.end(JSON.stringify({ loading: true, ready: false })); return; }
+    const roomId = u.searchParams.get("room");
+    const rs = roomId ? getRoomState(roomId) : null;
+    if (!rs?.torrent) { res.writeHead(200); res.end(JSON.stringify({ loading: true, ready: false })); return; }
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({
-      ready: !!activeFile,
-      loading: !activeFile,
-      name: activeTorrent.name,
-      file: activeFile?.name,
-      size: activeFile?.length,
-      streamUrl: activeFile ? "/stream" : null,
-      progress: activeTorrent.progress,
-      downloadSpeed: activeTorrent.downloadSpeed,
-      numPeers: activeTorrent.numPeers,
-      done: activeTorrent.done
+      ready: !!rs.file,
+      loading: !rs.file,
+      name: rs.torrent.name,
+      file: rs.file?.name,
+      size: rs.file?.length,
+      streamUrl: rs.file ? `/stream?room=${encodeURIComponent(roomId)}` : null,
+      progress: rs.torrent.progress,
+      downloadSpeed: rs.torrent.downloadSpeed,
+      numPeers: rs.torrent.numPeers,
+      done: rs.torrent.done
     }));
     return;
   }
 
+  // ── GET /stream ──
   if (req.method === "GET" && u.pathname === "/stream") {
-    if (!activeFile) { res.writeHead(404); res.end("No active stream"); return; }
+    const roomId = u.searchParams.get("room");
+    const rs = roomId ? getRoomState(roomId) : null;
+    if (!rs?.file) { res.writeHead(404); res.end("No active stream"); return; }
 
+    const activeFile = rs.file;
+    const activeTorrent = rs.torrent;
     const audioParam = u.searchParams.get("audio");
     const compatMode = u.searchParams.get("compat") === "1";
+    const transcodeMode = u.searchParams.get("transcode") === "1";
     const ext = activeFile.name.split(".").pop().toLowerCase();
     const inputFormat = ext === "mkv" ? "matroska" : ext;
 
+    // Audio track switch — remux with selected audio stream
     if (audioParam !== null) {
       const audioIdx = parseInt(audioParam);
       res.writeHead(200, { "Content-Type": "video/mp4" });
@@ -341,16 +386,16 @@ const server = http.createServer((req, res) => {
         .input(activeFile.createReadStream())
         .inputFormat(inputFormat)
         .outputOptions(["-map 0:v:0", `-map 0:a:${audioIdx}`, "-c:v copy", "-c:a aac", "-b:a 192k", "-f mp4", "-movflags frag_keyframe+empty_moov"])
-        .on("error", e => { console.error("[audio remux]", e.message); try { res.end(); } catch(_) {} })
+        .on("error", e => { console.error("[audio remux]", e.message); try { res.end(); } catch (_) {} })
         .pipe(res, { end: true });
-      req.on("close", () => { try { ff.kill("SIGKILL"); } catch(_) {} });
+      req.on("close", () => { try { ff.kill("SIGKILL"); } catch (_) {} });
       return;
     }
 
-    const transcodeMode = u.searchParams.get("transcode") === "1";
-    if (compatMode || !["mp4", "m4v"].includes(ext)) {
-      const mode = transcodeMode ? "transcode->h264" : "remux";
-      console.log(`[compat] ${mode} ${ext} -> fmp4: ${activeFile.name}`);
+    // Compat / transcode mode — repackage as fragmented MP4 via FFmpeg
+    // Uses createReadStream() directly to avoid recursive HTTP loop
+    if (compatMode || transcodeMode || !["mp4", "m4v"].includes(ext)) {
+      console.log(`[compat][${roomId}] ${transcodeMode ? "transcoding" : "remuxing"}: ${activeFile.name}`);
       res.writeHead(200, { "Content-Type": "video/mp4" });
       const videoOpts = transcodeMode
         ? ["-c:v libx264", "-preset ultrafast", "-crf 23", "-pix_fmt yuv420p", "-profile:v main", "-level 4.0"]
@@ -364,14 +409,19 @@ const server = http.createServer((req, res) => {
           "-c:a aac", "-ac 2", "-b:a 192k",
           "-f mp4", "-movflags frag_keyframe+empty_moov+default_base_moof"
         ])
-        .on("error", e => { console.error("[compat remux]", e.message); try { res.end(); } catch(_) {} })
+        .on("error", e => { console.error("[compat remux]", e.message); try { res.end(); } catch (_) {} })
         .pipe(res, { end: true });
-      req.on("close", () => { try { ff.kill("SIGKILL"); } catch(_) {} });
+      req.on("close", () => { try { ff.kill("SIGKILL"); } catch (_) {} });
       return;
     }
 
+    // Native range-request streaming (MP4/M4V)
     const fileSize = activeFile.length;
-    const mimeTypes = { mp4: "video/mp4", webm: "video/webm", mkv: "video/x-matroska", avi: "video/x-msvideo", mov: "video/quicktime", ogv: "video/ogg", ogg: "video/ogg", ts: "video/mp2t", m4v: "video/mp4" };
+    const mimeTypes = {
+      mp4: "video/mp4", webm: "video/webm", mkv: "video/x-matroska",
+      avi: "video/x-msvideo", mov: "video/quicktime", ogv: "video/ogg",
+      ogg: "video/ogg", ts: "video/mp2t", m4v: "video/mp4"
+    };
     const contentType = mimeTypes[ext] || "video/mp4";
     const rangeHeader = req.headers.range;
 
@@ -384,7 +434,7 @@ const server = http.createServer((req, res) => {
         const pieceLen = activeTorrent.pieceLength;
         const startPiece = Math.floor(start / pieceLen);
         const endPiece = Math.floor(end / pieceLen);
-        try { activeTorrent.critical(startPiece, endPiece + 2); } catch(e) {}
+        try { activeTorrent.critical(startPiece, endPiece + 2); } catch (e) {}
       }
       res.writeHead(206, {
         "Content-Range": `bytes ${start}-${end}/${fileSize}`,
@@ -404,23 +454,20 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // ── GET /api/search ──
   if (req.method === "GET" && u.pathname === "/api/search") {
     const q = u.searchParams.get("q");
     if (!q) { res.writeHead(400); res.end(JSON.stringify({ error: "Missing q" })); return; }
     (async () => {
-      const hdrs = { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", "Accept": "application/json" };
       const enc = encodeURIComponent(q);
       const [mr, sr] = await Promise.all([
-        fetch(`https://v3-cinemeta.strem.io/catalog/movie/top/search=${enc}.json`, { headers: hdrs }).catch(() => null),
-        fetch(`https://v3-cinemeta.strem.io/catalog/series/top/search=${enc}.json`, { headers: hdrs }).catch(() => null)
+        fetch(`https://v3-cinemeta.strem.io/catalog/movie/top/search=${enc}.json`),
+        fetch(`https://v3-cinemeta.strem.io/catalog/series/top/search=${enc}.json`)
       ]);
-      const [md, sd] = await Promise.all([
-        mr && mr.ok ? mr.json().catch(() => ({})) : {},
-        sr && sr.ok ? sr.json().catch(() => ({})) : {}
-      ]);
+      const [movies, series] = await Promise.all([mr.json(), sr.json()]);
       const results = [
-        ...(md.metas || []).slice(0, 6).map(m => ({ id: m.id, name: m.name, year: String(m.year || ""), poster: m.poster || "", type: "movie" })),
-        ...(sd.metas || []).slice(0, 4).map(s => ({ id: s.id, name: s.name, year: String(s.year || ""), poster: s.poster || "", type: "series" }))
+        ...(movies.metas || []).slice(0, 6).map(m => ({ ...m, type: "movie" })),
+        ...(series.metas || []).slice(0, 4).map(s => ({ ...s, type: "series" }))
       ];
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify(results));
@@ -428,113 +475,26 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // ── GET /api/streams ──
   if (req.method === "GET" && u.pathname === "/api/streams") {
     const imdb = u.searchParams.get("imdb");
     const type = u.searchParams.get("type") || "movie";
     const season = u.searchParams.get("season");
     const episode = u.searchParams.get("episode");
     if (!imdb) { res.writeHead(400); res.end(JSON.stringify({ error: "Missing imdb" })); return; }
+    const url = (type === "series" && season && episode)
+      ? `https://torrentio.strem.fun/stream/series/${imdb}:${season}:${episode}.json`
+      : `https://torrentio.strem.fun/stream/movie/${imdb}.json`;
     (async () => {
-      const hdrs = { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" };
-      let streams = [];
-
-      if (type === "movie") {
-        // Primary: YTS (never blocks server IPs)
-        try {
-          const yr = await fetch(`https://yts.mx/api/v2/list_movies.json?query_term=${encodeURIComponent(imdb)}&limit=5`, { headers: hdrs });
-          const yd = await yr.json();
-          const movies = (yd.data && yd.data.movies) || [];
-          for (const movie of movies) {
-            for (const t of (movie.torrents || [])) {
-              if (!t.hash) continue;
-              const sizeMB = Math.round((t.size_bytes || 0) / 1024 / 1024);
-              const sizeStr = sizeMB > 1024 ? (sizeMB / 1024).toFixed(1) + " GB" : sizeMB + " MB";
-              streams.push({
-                name: "YTS " + (t.quality || "") + " " + (t.type || ""),
-                title: movie.title + " (" + movie.year + ")\n" + (t.quality || "") + " " + (t.type || "bluray").toUpperCase() + " - " + sizeStr + " - " + (t.seeds || 0) + " seeds",
-                infoHash: t.hash.toLowerCase(),
-                behaviorHints: { filename: movie.title_english.replace(/[^a-zA-Z0-9]/g, ".") + "." + (t.quality || "") + ".BluRay.YTS.MX.mp4" }
-              });
-            }
-          }
-        } catch(e) { /* YTS failed, try torrentio */ }
-
-        // Fallback: Torrentio
-        if (!streams.length) {
-          try {
-            const tr = await fetch(`https://torrentio.strem.fun/stream/movie/${imdb}.json`, { headers: hdrs });
-            const td = await tr.json();
-            streams = td.streams || [];
-          } catch(e) { /* both failed */ }
-        }
-
-      } else {
-        // Series: EZTV primary (by IMDB ID)
-        if (season && episode) {
-          try {
-            const numId = imdb.replace(/^tt0*/, "");
-            const er = await fetch(`https://eztv.re/api/get-torrents?imdb_id=${numId}&limit=100`, { headers: hdrs });
-            if (er.ok) {
-              const ed = await er.json();
-              const torrents = (ed.torrents || []).filter(t =>
-                String(t.season) === String(season) && String(t.episode) === String(episode)
-              );
-              streams = torrents.map(t => ({
-                name: "EZTV",
-                title: t.title + "\n" + (t.size_bytes ? (t.size_bytes / 1024 / 1024 / 1024).toFixed(2) + " GB" : ""),
-                infoHash: (t.hash || "").toLowerCase(),
-                behaviorHints: { filename: t.filename || t.title }
-              })).filter(s => s.infoHash);
-            }
-          } catch(e) { /* eztv failed */ }
-        }
-
-        // Fallback: apibay (TPB) search by title + episode code
-        if (!streams.length && season && episode) {
-          try {
-            const title = u.searchParams.get("title") || "";
-            const s2 = String(season).padStart(2, "0");
-            const e2 = String(episode).padStart(2, "0");
-            const q = encodeURIComponent((title ? title + " " : "") + `S${s2}E${e2}`);
-            const pr = await fetch(`https://apibay.org/q.php?q=${q}&cat=205,208,200`, { headers: hdrs });
-            if (pr.ok) {
-              const pd = await pr.json();
-              streams = (Array.isArray(pd) ? pd : []).filter(t => t.info_hash && t.info_hash !== "0000000000000000000000000000000000000000").map(t => {
-                const sizeMB = Math.round(Number(t.size || 0) / 1024 / 1024);
-                const sizeStr = sizeMB > 1024 ? (sizeMB / 1024).toFixed(1) + " GB" : sizeMB + " MB";
-                return {
-                  name: "TPB",
-                  title: t.name + "\n" + sizeStr + " - " + (t.seeders || 0) + " seeds",
-                  infoHash: t.info_hash.toLowerCase(),
-                  behaviorHints: { filename: t.name }
-                };
-              }).sort((a, b) => {
-                const sa = Number((b.title.match(/(\d+) seeds/) || [0,0])[1]);
-                const sb = Number((a.title.match(/(\d+) seeds/) || [0,0])[1]);
-                return sa - sb;
-              }).slice(0, 20);
-            }
-          } catch(e) { /* apibay failed */ }
-        }
-
-        // Final fallback: Torrentio for series
-        if (!streams.length) {
-          try {
-            const tsUrl = (season && episode)
-              ? `https://torrentio.strem.fun/stream/series/${imdb}:${season}:${episode}.json`
-              : `https://torrentio.strem.fun/stream/series/${imdb}.json`;
-            const tr = await fetch(tsUrl, { headers: hdrs });
-            if (tr.ok) { const td = await tr.json(); streams = td.streams || []; }
-          } catch(e) { /* all failed */ }
-        }
-      }
-
+      const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
+      const data = await r.json();
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify(streams));
+      res.end(JSON.stringify(data.streams || []));
     })().catch(e => { res.writeHead(500); res.end(JSON.stringify({ error: e.message })); });
     return;
   }
 
+  // ── Static ──
   if (req.method === "GET" && (u.pathname === "/" || u.pathname === "/index.html")) {
     const htmlPath = path.join(__dirname, "public", "index.html");
     if (!fs.existsSync(htmlPath)) { res.writeHead(404); res.end("index.html not found"); return; }
@@ -546,6 +506,7 @@ const server = http.createServer((req, res) => {
   res.writeHead(404); res.end("Not found");
 });
 
+// ── WebSocket ──
 const wss = new WebSocketServer({ server, path: "/ws" });
 wss.on("connection", (ws) => {
   ws._roomId = null;
@@ -562,15 +523,22 @@ wss.on("connection", (ws) => {
       console.log(`[room] ${ws._name} joined ${msg.roomId} (${rooms[msg.roomId].size} total)`);
       return;
     }
-    if (["play","pause","seek","chat","magnet","subtitle","subtitle_upload"].includes(msg.type) && ws._roomId) {
+    if (["play", "pause", "seek", "chat", "magnet", "subtitle", "subtitle_upload"].includes(msg.type) && ws._roomId) {
       broadcast(ws._roomId, ws, JSON.stringify({ ...msg, sender: ws._name }));
     }
   });
   ws.on("close", () => {
-    if (ws._roomId && rooms[ws._roomId]) {
-      rooms[ws._roomId].delete(ws);
-      broadcast(ws._roomId, ws, JSON.stringify({ type: "left", sender: ws._name }));
-      if (rooms[ws._roomId].size === 0) delete rooms[ws._roomId];
+    const rid = ws._roomId;
+    if (rid && rooms[rid]) {
+      rooms[rid].delete(ws);
+      broadcast(rid, ws, JSON.stringify({ type: "left", sender: ws._name }));
+      if (rooms[rid].size === 0) {
+        delete rooms[rid];
+        // Delay cleanup to tolerate quick reconnects / page refreshes
+        setTimeout(() => {
+          if (!rooms[rid]) cleanupRoomTorrent(rid);
+        }, 30000);
+      }
     }
   });
 });
@@ -582,4 +550,4 @@ function broadcast(roomId, sender, data) {
   }
 }
 
-server.listen(PORT, () => console.log(`\n  stream.party running at http://localhost:${PORT}\n`));
+server.listen(PORT, () => console.log(`\n  flikroom running at http://localhost:${PORT}\n`));
