@@ -659,12 +659,37 @@ function initVideoControls(vid) {
     document.getElementById('volBtn').textContent = volIcon(v);
   });
   vid.addEventListener('error', () => {
-    const code = vid.error ? vid.error.code : '?';
-    const msg = code === 3 || code === 4
-      ? 'This browser cannot decode this video format (try Chrome). Error: ' + vid.error?.message
-      : 'Video error: ' + (vid.error?.message || 'unknown');
-    setStatus(msg);
-    toast(msg, 6000);
+    const code = vid.error ? vid.error.code : 0;
+    const msg = (vid.error && vid.error.message) || '';
+
+    // Buffer/read errors: retry with backoff (torrent not buffered yet)
+    const isReadError = msg.includes('PIPELINE_ERROR_READ') || msg.includes('data source error');
+    if (isReadError && vid.src) {
+      const retries = vid._readRetries || 0;
+      if (retries < 4) {
+        vid._readRetries = retries + 1;
+        setTimeout(() => { const s = vid.src; vid.src = ''; vid.src = s; vid.load(); vid.play().catch(() => {}); }, (retries + 1) * 2000);
+        return;
+      }
+    }
+
+    // Decode errors (HEVC/codec unsupported): auto-retry with H.264 transcode
+    if ((code === 3 || code === 4) && vid.src && !vid.src.includes('transcode=1')) {
+      sysMsg('⚠️ Codec not supported — retranscoding to H.264...');
+      setStatus('Transcoding to H.264...', true);
+      const rp = roomId ? 'room=' + roomId + '&' : '';
+      vid.src = '/stream?' + rp + 'transcode=1&t=' + Date.now();
+      vid.load();
+      vid.play().catch(() => {});
+      return;
+    }
+
+    // Give up
+    const errMsg = (code === 3 || code === 4)
+      ? 'Cannot decode this video (H.264 transcode also failed). Error: ' + msg
+      : 'Video error: ' + (msg || 'unknown');
+    setStatus(errMsg);
+    toast(errMsg, 6000);
   });
 }
 
@@ -931,40 +956,4 @@ function renderStreams(container, streams) {
     const qClass = q === '4K' ? 'q-4k' : q === '1080p' ? 'q-1080p' : q === '720p' ? 'q-720p' : 'q-sd';
     const lines = (stream.title || '').split('\n');
     const name = lines[0] || stream.name || '';
-    const meta = lines.slice(1).join(' · ');
-    const el = document.createElement('div');
-    el.className = 'stream-item';
-    el.innerHTML = `
-      <span class="stream-quality ${qClass}">${q}</span>
-      <div class="stream-info">
-        <div class="stream-name">${name}</div>
-        ${meta ? `<div class="stream-meta">${meta}</div>` : ''}
-      </div>`;
-    el.onclick = () => {
-      const dn = encodeURIComponent(stream.behaviorHints?.filename || name);
-      document.getElementById('magnetInput').value = `magnet:?xt=urn:btih:${stream.infoHash}&dn=${dn}`;
-      closeModal();
-      loadTorrent();
-    };
-    container.appendChild(el);
-  });
-}
-
-function closeModal() {
-  document.getElementById('modalOverlay').classList.remove('open');
-}
-
-// ── Chat ──
-function sendChat() {
-  const input = document.getElementById('chatInput');
-  const text = input.value.trim();
-  if (!text) return;
-  input.value = '';
-  chatMsg(getName(), text);
-  wsSend({ type: 'chat', text });
-}
-
-updateAvatars();
-</script>
-</body>
-</html>
+    const meta = li
