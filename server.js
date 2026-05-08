@@ -542,5 +542,19 @@ wss.on("connection", (ws) => {
       broadcast(rid, ws, JSON.stringify({ type: "left", sender: ws._name }));
       if (rooms[rid].size === 0) {
         delete rooms[rid];
-        // Delay cleanup to tolerate quick reconnects / page refreshes
-        set
+        setTimeout(() => {
+          if (!rooms[rid]) cleanupRoomTorrent(rid);
+        }, 30000);
+      }
+    }
+  });
+});
+
+function broadcast(roomId, sender, data) {
+  if (!rooms[roomId]) return;
+  for (const ws of rooms[roomId]) {
+    if (ws !== sender && ws.readyState === 1) ws.send(data);
+  }
+}
+
+server.listen(PORT, () => console.log(`\n  flikroom running at http://localhost:${PORT}\n`));
