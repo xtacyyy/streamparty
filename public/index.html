@@ -717,8 +717,24 @@ function initVideoControls(vid) {
       return;
     }
 
+    if ((code === 3 || code === 4) && vid.src && vid.src.indexOf('transcode=1') !== -1) {
+      const retries = vid._transcodeRetries || 0;
+      if (retries < 3) {
+        vid._transcodeRetries = retries + 1;
+        const delay = (retries + 1) * 5000;
+        setStatus('Buffering — retrying in ' + (delay / 1000) + 's...', true);
+        setTimeout(function() {
+          const rp = roomId ? 'room=' + roomId + '&' : '';
+          vid.src = '/stream?' + rp + 'transcode=1&t=' + Date.now();
+          vid.load();
+          vid.play().catch(function(){});
+        }, delay);
+        return;
+      }
+    }
+
     const errMsg = (code === 3 || code === 4)
-      ? 'Cannot decode this video (H.264 transcode also failed). Error: ' + msg
+      ? 'Cannot decode this video. Error: ' + msg
       : 'Video error: ' + (msg || 'unknown');
     setStatus(errMsg);
     toast(errMsg, 6000);

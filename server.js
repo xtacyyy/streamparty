@@ -459,6 +459,7 @@ const server = http.createServer(function(req, res) {
       const ff = Ffmpeg()
         .input(activeFile.createReadStream())
         .inputFormat(inputFormat)
+        .inputOptions(["-fflags", "+genpts+discardcorrupt", "-err_detect", "ignore_err", "-analyzeduration", "10000000", "-probesize", "10000000"])
         .outputOptions(["-map 0:v:0", "-map 0:a:0"].concat(videoOpts).concat(["-c:a aac", "-ac 2", "-b:a 192k", "-f mp4", "-movflags frag_keyframe+empty_moov+default_base_moof"]))
         .on("error", function(e) { console.error("[compat remux]", e.message); try { res.end(); } catch (_) {} })
         .pipe(res, { end: true });
