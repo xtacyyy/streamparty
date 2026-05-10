@@ -901,7 +901,7 @@ async function doSearch() {
   } catch(e) {
     box.innerHTML = '<div style="padding:12px 16px;color:var(--danger);font-size:13px;">Error: ' + e.message + '</div>';
   } finally {
-    btn.textContent = '&#128269;'; btn.disabled = false;
+    btn.innerHTML = '&#128269;'; btn.disabled = false;
   }
 }
 
