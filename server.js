@@ -270,9 +270,14 @@ const server = http.createServer(function(req, res) {
           const pieceCount = torrent.pieces.length;
           const criticalEnd = Math.max(10, Math.floor(pieceCount * 0.1));
           try { torrent.critical(0, criticalEnd); } catch (e) {}
+          notifyRoom(roomId, { type: "torrentready", file: rs.videoFiles[0].name });
         } else {
           rs.videoFiles.forEach(function(f) { try { f.deselect(); } catch (e) {} });
           console.log("[torrent][" + roomId + "] " + rs.videoFiles.length + " files — awaiting selection");
+          notifyRoom(roomId, {
+            type: "awaitingfileselect",
+            files: rs.videoFiles.map(function(f, i) { return { index: i, name: f.name, size: f.length }; })
+          });
         }
       };
 
@@ -581,6 +586,14 @@ function broadcast(roomId, sender, data) {
   if (!rooms[roomId]) return;
   for (const ws of rooms[roomId]) {
     if (ws !== sender && ws.readyState === 1) ws.send(data);
+  }
+}
+
+function notifyRoom(roomId, data) {
+  if (!rooms[roomId]) return;
+  const msg = JSON.stringify(Object.assign({}, data, { sender: "server" }));
+  for (const ws of rooms[roomId]) {
+    if (ws.readyState === 1) ws.send(msg);
   }
 }
 

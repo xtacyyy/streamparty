@@ -316,6 +316,7 @@ let roomId = null;
 let members = [];
 let syncing = false;
 let statusInterval = null;
+let videoStarted = false;
 
 const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) ||
   (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -474,6 +475,13 @@ function connectWS(id) {
       vid.currentTime = msg.time;
       sysMsg(msg.sender + ' jumped to ' + fmtTime(msg.time));
       setTimeout(function() { syncing = false; }, 500);
+    } else if (msg.type === 'torrentready') {
+      startVideoPlayback(msg.file);
+    } else if (msg.type === 'awaitingfileselect') {
+      if (!videoStarted && msg.files) {
+        setStatus('Select an episode to play');
+        showFilePicker(msg.files);
+      }
     } else if (msg.type === 'fileselect') {
       fetch('/api/selectfile', {
         method: 'POST',
@@ -527,6 +535,29 @@ function joinRoom() {
 }
 
 // ── Torrent Loading ──
+function startVideoPlayback(fileName) {
+  if (videoStarted) return;
+  videoStarted = true;
+  clearInterval(statusInterval);
+  const vid = document.getElementById('videoEl');
+  document.getElementById('tiName').textContent = fileName;
+  document.getElementById('torInfo').style.display = 'flex';
+  vid.src = streamUrl();
+  vid.style.display = 'block';
+  document.getElementById('placeholder').style.display = 'none';
+  setStatus('Streaming: ' + fileName);
+  sysMsg('Playing <strong>' + fileName + '</strong>');
+
+  if (!vid._syncBound) {
+    vid._syncBound = true;
+    vid.addEventListener('play', function() { if (!syncing) wsSend({ type: 'play', time: vid.currentTime }); });
+    vid.addEventListener('pause', function() { if (!syncing) wsSend({ type: 'pause', time: vid.currentTime }); });
+    vid.addEventListener('seeked', function() { if (!syncing) wsSend({ type: 'seek', time: vid.currentTime }); });
+    initVideoControls(vid);
+    loadTracks();
+  }
+}
+
 async function loadTorrent(broadcast) {
   if (broadcast === undefined) broadcast = true;
   const magnet = document.getElementById('magnetInput').value.trim();
@@ -538,6 +569,7 @@ async function loadTorrent(broadcast) {
   setStatus('Sending magnet to server...', true);
   document.getElementById('torInfo').style.display = 'none';
   clearInterval(statusInterval);
+  videoStarted = false;
 
   try {
     const res = await fetch('/api/load', {
@@ -554,8 +586,8 @@ async function loadTorrent(broadcast) {
   }
 
   setStatus('Fetching torrent metadata...', true);
-  let videoStarted = false;
 
+  // Fallback poll — WS push will usually fire first
   statusInterval = setInterval(async function() {
     try {
       const s = await fetch('/api/status' + (roomId ? '?room=' + roomId : '')).then(function(r) { return r.json(); });
@@ -569,7 +601,6 @@ async function loadTorrent(broadcast) {
         document.getElementById('torPeers').textContent = s.numPeers + ' peers';
       }
 
-      // Multi-file torrent: show episode picker
       if (!videoStarted && s.awaitingFileSelect && s.files && s.files.length > 1) {
         if (!statusInterval._pickerShown) {
           statusInterval._pickerShown = true;
@@ -579,31 +610,13 @@ async function loadTorrent(broadcast) {
         return;
       }
 
-      if (!videoStarted && s.ready && s.streamUrl) {
-        videoStarted = true;
-        const vid = document.getElementById('videoEl');
-        const ph = document.getElementById('placeholder');
-        document.getElementById('tiName').textContent = s.file;
-        document.getElementById('torInfo').style.display = 'flex';
-        vid.src = isIOS ? streamUrl() : s.streamUrl + '&t=' + Date.now();
-        vid.style.display = 'block';
-        ph.style.display = 'none';
-        setStatus('Streaming: ' + s.file);
-        sysMsg('Playing <strong>' + s.file + '</strong>');
-
-        if (!vid._syncBound) {
-          vid._syncBound = true;
-          vid.addEventListener('play', function() { if (!syncing) wsSend({ type: 'play', time: vid.currentTime }); });
-          vid.addEventListener('pause', function() { if (!syncing) wsSend({ type: 'pause', time: vid.currentTime }); });
-          vid.addEventListener('seeked', function() { if (!syncing) wsSend({ type: 'seek', time: vid.currentTime }); });
-          initVideoControls(vid);
-          loadTracks();
-        }
+      if (!videoStarted && s.ready && s.file) {
+        startVideoPlayback(s.file);
       } else if (!videoStarted && !s.ready) {
         setStatus('Fetching torrent metadata...', true);
       }
     } catch(e) { console.error('[poll]', e); }
-  }, 2000);
+  }, 500);
 }
 
 // ── Custom Video Controls ──
