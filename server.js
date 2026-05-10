@@ -261,7 +261,7 @@ const server = http.createServer(function(req, res) {
           .sort(function(a, b) { return a.path.localeCompare(b.path, undefined, { numeric: true, sensitivity: "base" }); });
 
         if (rs.videoFiles.length === 0) {
-          console.log("[torrent][" + roomId + "] no video files found. all files: " + torrent.files.map(function(f) { return f.name + " (" + f.path + ")"; }).join(", "));
+          console.log("[torrent][" + roomId + "] no video files found");
           return;
         }
 
