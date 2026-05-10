@@ -217,7 +217,7 @@
         <button class="vid-btn" onclick="toggleSubUrlInput()" style="font-size:12px;">&#x2715;</button>
       </div>
       <div class="vid-seek-row">
-        <input type="range" id="seekBar" min="0" max="1000" value="0" oninput="onSeek(this.value)" style="flex:1;" />
+        <input type="range" id="seekBar" min="0" max="1000" value="0" style="flex:1;" />
         <span id="vidTime" class="vid-time">0:00 / 0:00</span>
       </div>
       <div class="vid-btn-row">
@@ -641,6 +641,8 @@ function toggleFullscreen() {
   else document.exitFullscreen();
 }
 
+let seekDragging = false;
+
 function onSeek(val) {
   const vid = document.getElementById('videoEl');
   if (vid.duration) vid.currentTime = (val / 1000) * vid.duration;
@@ -652,11 +654,25 @@ function initVideoControls(vid) {
   document.getElementById('playBtn').textContent = '▶';
   document.getElementById('subUrlBtn').style.display = 'inline-block';
 
+  const seekBar = document.getElementById('seekBar');
+  seekBar.addEventListener('pointerdown', function() { seekDragging = true; });
+  seekBar.addEventListener('input', function() {
+    if (!vid.duration) return;
+    document.getElementById('vidTime').textContent = fmtTime((seekBar.value / 1000) * vid.duration) + ' / ' + fmtTime(vid.duration);
+  });
+  seekBar.addEventListener('pointerup', function() {
+    seekDragging = false;
+    if (vid.duration) vid.currentTime = (seekBar.value / 1000) * vid.duration;
+  });
+  seekBar.addEventListener('change', function() {
+    if (!seekDragging && vid.duration) vid.currentTime = (seekBar.value / 1000) * vid.duration;
+  });
+
   vid.addEventListener('play', function() { document.getElementById('playBtn').textContent = '⏸'; });
   vid.addEventListener('pause', function() { document.getElementById('playBtn').textContent = '▶'; });
   vid.addEventListener('timeupdate', function() {
-    if (!vid.duration) return;
-    document.getElementById('seekBar').value = Math.round((vid.currentTime / vid.duration) * 1000);
+    if (!vid.duration || seekDragging) return;
+    seekBar.value = Math.round((vid.currentTime / vid.duration) * 1000);
     document.getElementById('vidTime').textContent = fmtTime(vid.currentTime) + ' / ' + fmtTime(vid.duration);
   });
   vid.addEventListener('volumechange', function() {
