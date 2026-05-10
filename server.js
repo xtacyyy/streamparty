@@ -22,11 +22,7 @@ const client = new WebTorrent();
 const SUBTITLE_EXTS = ["srt", "vtt", "ass", "ssa"];
 const VIDEO_EXTS = ["mp4", "mkv", "webm", "avi", "mov", "m4v", "ogv", "ogg", "ts"];
 
-// ── Per-room WebSocket connections ──
 const rooms = {};
-
-// ── Per-room torrent state ──
-// roomTorrents[roomId] = { torrent, file, videoFiles, trackInfo, subtitleFiles, autoSubContent }
 const roomTorrents = {};
 
 function getRoomState(roomId) {
@@ -46,7 +42,7 @@ function initRoomState(roomId) {
 function getActiveTorrentDirs() {
   const dirs = new Set();
   for (const rs of Object.values(roomTorrents)) {
-    if (rs.torrent?.name) dirs.add(path.join(DOWNLOADS_PATH, rs.torrent.name));
+    if (rs.torrent && rs.torrent.name) dirs.add(path.join(DOWNLOADS_PATH, rs.torrent.name));
   }
   return dirs;
 }
@@ -57,18 +53,17 @@ function cleanupRoomTorrent(roomId) {
   if (rs.torrent) {
     const infoHash = rs.torrent.infoHash;
     const sharedByOther = Object.entries(roomTorrents).some(
-      ([id, s]) => id !== roomId && s.torrent?.infoHash === infoHash
+      function(entry) { return entry[0] !== roomId && entry[1].torrent && entry[1].torrent.infoHash === infoHash; }
     );
     if (!sharedByOther) {
       try { client.remove(infoHash, { destroyStore: false }); } catch (e) {}
-      console.log(`[torrent] removed ${infoHash} (no more rooms using it)`);
+      console.log("[torrent] removed " + infoHash);
     }
   }
   delete roomTorrents[roomId];
-  console.log(`[room] torrent state cleaned up for ${roomId}`);
+  console.log("[room] cleaned up " + roomId);
 }
 
-// ── Utilities ──
 function srtToVtt(srt) {
   return "WEBVTT\n\n" + srt
     .replace(/\r\n/g, "\n")
@@ -86,36 +81,31 @@ function parseMovieInfo(filename) {
     title = base.replace(/\b(1080p|720p|480p|2160p|4K|BluRay|BRRip|WEBRip|WEB-DL|HDTV|x264|x265|HEVC|AAC|DTS|YTS|YIFY)\b.*/i, "");
   }
   title = title.replace(/[.\-_]/g, " ").replace(/\s+/g, " ").trim();
-  return { title, year };
+  return { title: title, year: year };
 }
 
 async function fetchAutoSubtitle(filename) {
   const apiKey = process.env.SUBDL_API_KEY;
-  if (!apiKey) { console.log("[sub-auto] no SUBDL_API_KEY set, skipping"); return null; }
-  const { title, year } = parseMovieInfo(filename);
-  if (!title) return null;
-  console.log(`[sub-auto] searching subdl: "${title}" (${year || "?"})`);
+  if (!apiKey) return null;
+  const info = parseMovieInfo(filename);
+  if (!info.title) return null;
   try {
-    const params = new URLSearchParams({ api_key: apiKey, film_name: title, languages: "EN", type: "movie" });
-    if (year) params.set("year", year);
-    const searchRes = await fetch(`https://api.subdl.com/api/v1/subtitles?${params}`);
+    const params = new URLSearchParams({ api_key: apiKey, film_name: info.title, languages: "EN", type: "movie" });
+    if (info.year) params.set("year", info.year);
+    const searchRes = await fetch("https://api.subdl.com/api/v1/subtitles?" + params);
     const searchData = await searchRes.json();
-    if (!searchData.status || !searchData.subtitles?.length) { console.log("[sub-auto] no results from subdl"); return null; }
-    const sub = searchData.subtitles.find(s => s.language === "EN") || searchData.subtitles[0];
-    if (!sub?.url) { console.log("[sub-auto] no download URL in result"); return null; }
-    const zipUrl = `https://dl.subdl.com${sub.url}`;
-    console.log(`[sub-auto] downloading zip: ${zipUrl}`);
+    if (!searchData.status || !searchData.subtitles || !searchData.subtitles.length) return null;
+    const sub = searchData.subtitles.find(function(s) { return s.language === "EN"; }) || searchData.subtitles[0];
+    if (!sub || !sub.url) return null;
+    const zipUrl = "https://dl.subdl.com" + sub.url;
     const zipRes = await fetch(zipUrl);
-    if (!zipRes.ok) { console.log("[sub-auto] zip download failed:", zipRes.status); return null; }
+    if (!zipRes.ok) return null;
     const zipBuffer = Buffer.from(await zipRes.arrayBuffer());
     const zip = new AdmZip(zipBuffer);
     const entries = zip.getEntries();
-    const srtEntry = entries.find(e => e.entryName.toLowerCase().endsWith(".srt"));
-    if (!srtEntry) { console.log("[sub-auto] no .srt found inside zip"); return null; }
-    const srtContent = srtEntry.getData().toString("utf8");
-    const vtt = srtToVtt(srtContent);
-    console.log(`[sub-auto] fetched "${srtEntry.entryName}" (${srtContent.length} bytes)`);
-    return vtt;
+    const srtEntry = entries.find(function(e) { return e.entryName.toLowerCase().endsWith(".srt"); });
+    if (!srtEntry) return null;
+    return srtToVtt(srtEntry.getData().toString("utf8"));
   } catch (e) {
     console.log("[sub-auto] error:", e.message);
     return null;
@@ -127,55 +117,57 @@ function infoHashFromMagnet(magnet) {
   return m ? m[1].toLowerCase() : null;
 }
 
-// ── Select a specific video file within a room's torrent ──
 function selectFileForRoom(roomId, fileIndex) {
   const rs = getRoomState(roomId);
   if (!rs || !rs.videoFiles.length) return false;
   const file = rs.videoFiles[fileIndex];
   if (!file) return false;
 
-  // Deselect all video files, then select the chosen one
-  rs.videoFiles.forEach(f => { try { f.deselect(); } catch (e) {} });
+  rs.videoFiles.forEach(function(f) { try { f.deselect(); } catch (e) {} });
   try { file.select(); } catch (e) {}
 
   rs.file = file;
   rs.trackInfo = null;
   rs.autoSubContent = null;
-
   if (rs.torrent) rs.torrent.strategy = "sequential";
 
-  console.log(`[torrent][${roomId}] file selected: ${file.name}`);
+  console.log("[torrent][" + roomId + "] file selected: " + file.name);
 
-  fetchAutoSubtitle(file.name).then(vtt => { rs.autoSubContent = vtt; });
+  fetchAutoSubtitle(file.name).then(function(vtt) { rs.autoSubContent = vtt; });
 
-  const externalSubs = rs.subtitleFiles.map((f, i) => ({
-    index: `ext:${i}`,
-    lang: "und",
-    title: f.name.replace(/\.[^.]+$/, "").replace(/\./g, " ").trim()
-  }));
+  const externalSubs = rs.subtitleFiles.map(function(f, i) {
+    return {
+      index: "ext:" + i,
+      lang: "und",
+      title: f.name.replace(/\.[^.]+$/, "").replace(/\./g, " ").trim()
+    };
+  });
 
-  setTimeout(() => {
-    Ffmpeg.ffprobe(`http://localhost:${PORT}/stream?room=${encodeURIComponent(roomId)}`, (err, meta) => {
+  setTimeout(function() {
+    Ffmpeg.ffprobe("http://localhost:" + PORT + "/stream?room=" + encodeURIComponent(roomId), function(err, meta) {
       const streams = err ? [] : (meta.streams || []);
-      const embeddedSubs = streams.filter(s => s.codec_type === "subtitle").map(s => ({
-        index: s.index,
-        lang: s.tags?.language || "und",
-        title: s.tags?.title || (s.tags?.language ? s.tags.language.toUpperCase() : `Embedded ${s.index}`)
-      }));
-      const audio = streams.filter(s => s.codec_type === "audio").map((s, i) => ({
-        index: s.index,
-        lang: s.tags?.language || "und",
-        title: s.tags?.title || (s.tags?.language ? s.tags.language.toUpperCase() : `Track ${i + 1}`)
-      }));
-      rs.trackInfo = { subtitles: [...externalSubs, ...embeddedSubs], audio };
-      console.log(`[tracks][${roomId}] ${rs.trackInfo.subtitles.length} subtitle(s), ${rs.trackInfo.audio.length} audio track(s)`);
+      const embeddedSubs = streams.filter(function(s) { return s.codec_type === "subtitle"; }).map(function(s) {
+        return {
+          index: s.index,
+          lang: (s.tags && s.tags.language) || "und",
+          title: (s.tags && s.tags.title) || ((s.tags && s.tags.language) ? s.tags.language.toUpperCase() : "Embedded " + s.index)
+        };
+      });
+      const audio = streams.filter(function(s) { return s.codec_type === "audio"; }).map(function(s, i) {
+        return {
+          index: s.index,
+          lang: (s.tags && s.tags.language) || "und",
+          title: (s.tags && s.tags.title) || ((s.tags && s.tags.language) ? s.tags.language.toUpperCase() : "Track " + (i + 1))
+        };
+      });
+      rs.trackInfo = { subtitles: externalSubs.concat(embeddedSubs), audio: audio };
+      console.log("[tracks][" + roomId + "] " + rs.trackInfo.subtitles.length + " subtitle(s), " + rs.trackInfo.audio.length + " audio track(s)");
     });
   }, 3000);
 
   return true;
 }
 
-// ── Disk cleanup ──
 function getDiskUsage() {
   try {
     const stat = fs.statfsSync(DOWNLOADS_PATH);
@@ -188,52 +180,53 @@ function checkDisk() {
     if (!fs.existsSync(DOWNLOADS_PATH)) return;
     const usage = getDiskUsage();
     if (usage <= 0.80) return;
-    console.log(`[disk] usage ${Math.round(usage * 100)}% > 80%, cleaning...`);
     const activeDirs = getActiveTorrentDirs();
     const entries = [];
     for (const entry of fs.readdirSync(DOWNLOADS_PATH)) {
       const full = path.join(DOWNLOADS_PATH, entry);
-      try { entries.push({ full, mtime: fs.statSync(full).mtimeMs }); } catch (e) {}
+      try { entries.push({ full: full, mtime: fs.statSync(full).mtimeMs }); } catch (e) {}
     }
-    entries.sort((a, b) => a.mtime - b.mtime);
+    entries.sort(function(a, b) { return a.mtime - b.mtime; });
     for (const entry of entries) {
       if (getDiskUsage() <= 0.80) break;
       if (activeDirs.has(entry.full)) continue;
-      try { fs.rmSync(entry.full, { recursive: true, force: true }); console.log(`[disk] removed ${entry.full}`); } catch (e) {}
+      try { fs.rmSync(entry.full, { recursive: true, force: true }); } catch (e) {}
     }
   } catch (e) { console.error("[disk] cleanup error:", e.message); }
 }
 setInterval(checkDisk, 10 * 60 * 1000);
 
-// ── HTTP Server ──
-const server = http.createServer((req, res) => {
-  const u = new URL(req.url, "http://localhost");
+const server = http.createServer(function(req, res) {
+  const u = new NodeURL(req.url, "http://localhost");
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Range");
   res.setHeader("Access-Control-Expose-Headers", "Content-Range, Content-Length, Accept-Ranges");
   if (req.method === "OPTIONS") { res.writeHead(204); res.end(); return; }
 
-  // ── POST /api/load ──
+  // POST /api/load
   if (req.method === "POST" && u.pathname === "/api/load") {
     let body = "";
-    req.on("data", d => body += d);
-    req.on("end", () => {
+    req.on("data", function(d) { body += d; });
+    req.on("end", function() {
       let magnet, roomId;
       try {
         const parsed = JSON.parse(body);
         magnet = parsed.magnet;
         roomId = parsed.roomId;
-      } catch (e) { res.writeHead(400, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error: "Invalid JSON" })); return; }
+      } catch (e) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Invalid JSON" }));
+        return;
+      }
       if (!magnet) { res.writeHead(400, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error: "Missing magnet" })); return; }
       if (!roomId) { res.writeHead(400, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error: "Missing roomId" })); return; }
 
       const rs = initRoomState(roomId);
       const newHash = infoHashFromMagnet(magnet);
-      const curHash = rs.torrent?.infoHash?.toLowerCase();
+      const curHash = rs.torrent && rs.torrent.infoHash ? rs.torrent.infoHash.toLowerCase() : null;
 
       if (newHash && curHash && newHash === curHash) {
-        console.log(`[torrent][${roomId}] already active, skipping reload`);
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true, loading: !rs.file }));
         return;
@@ -241,9 +234,9 @@ const server = http.createServer((req, res) => {
 
       if (rs.torrent) {
         const oldHash = rs.torrent.infoHash;
-        const sharedByOther = Object.entries(roomTorrents).some(
-          ([id, s]) => id !== roomId && s.torrent?.infoHash === oldHash
-        );
+        const sharedByOther = Object.entries(roomTorrents).some(function(entry) {
+          return entry[0] !== roomId && entry[1].torrent && entry[1].torrent.infoHash === oldHash;
+        });
         if (!sharedByOther) {
           try { client.remove(oldHash, { destroyStore: false }); } catch (e) {}
         }
@@ -251,54 +244,48 @@ const server = http.createServer((req, res) => {
         rs.trackInfo = null; rs.subtitleFiles = []; rs.autoSubContent = null;
       }
 
-      console.log(`[torrent][${roomId}] loading: ${magnet.slice(0, 80)}`);
+      console.log("[torrent][" + roomId + "] loading: " + magnet.slice(0, 80));
 
-      const setupTorrent = (torrent) => {
+      const setupTorrent = function(torrent) {
         rs.torrent = torrent;
         rs.trackInfo = null; rs.subtitleFiles = []; rs.autoSubContent = null;
         rs.file = null; rs.videoFiles = [];
 
-        rs.subtitleFiles = torrent.files.filter(f =>
-          SUBTITLE_EXTS.includes(f.name.split(".").pop().toLowerCase())
-        );
-        rs.subtitleFiles.forEach(f => f.select());
-        if (rs.subtitleFiles.length) console.log(`[torrent][${roomId}] ${rs.subtitleFiles.length} subtitle file(s)`);
+        rs.subtitleFiles = torrent.files.filter(function(f) {
+          return SUBTITLE_EXTS.includes(f.name.split(".").pop().toLowerCase());
+        });
+        rs.subtitleFiles.forEach(function(f) { f.select(); });
 
-        // All video files sorted by path for natural episode ordering
         rs.videoFiles = torrent.files
-          .filter(f => VIDEO_EXTS.includes(f.name.split(".").pop().toLowerCase()))
-          .sort((a, b) => a.path.localeCompare(b.path, undefined, { numeric: true, sensitivity: "base" }));
+          .filter(function(f) { return VIDEO_EXTS.includes(f.name.split(".").pop().toLowerCase()); })
+          .sort(function(a, b) { return a.path.localeCompare(b.path, undefined, { numeric: true, sensitivity: "base" }); });
 
         if (rs.videoFiles.length === 0) {
-          console.log(`[torrent][${roomId}] no video files found`);
+          console.log("[torrent][" + roomId + "] no video files found");
           return;
         }
 
         if (rs.videoFiles.length === 1) {
-          // Single file — auto-select
           selectFileForRoom(roomId, 0);
           const pieceCount = torrent.pieces.length;
           const criticalEnd = Math.max(10, Math.floor(pieceCount * 0.1));
           try { torrent.critical(0, criticalEnd); } catch (e) {}
-          console.log(`[torrent][${roomId}] single file auto-selected: ${rs.videoFiles[0].name}`);
         } else {
-          // Multiple files — deselect all video files, wait for user to pick
-          rs.videoFiles.forEach(f => { try { f.deselect(); } catch (e) {} });
-          console.log(`[torrent][${roomId}] ${rs.videoFiles.length} video files found — awaiting selection`);
+          rs.videoFiles.forEach(function(f) { try { f.deselect(); } catch (e) {} });
+          console.log("[torrent][" + roomId + "] " + rs.videoFiles.length + " files — awaiting selection");
         }
       };
 
       const existingTorrent = newHash
-        ? (client.torrents.find(t => t.infoHash === newHash) || null)
+        ? (client.torrents.find(function(t) { return t.infoHash === newHash; }) || null)
         : null;
+
       if (existingTorrent) {
-        console.log(`[torrent][${roomId}] reusing existing torrent ${newHash}`);
         setupTorrent(existingTorrent);
       } else {
         try {
           client.add(magnet, { path: DOWNLOADS_PATH }, setupTorrent);
         } catch (e) {
-          console.error(`[torrent][${roomId}] client.add error:`, e.message);
           res.writeHead(500, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: "Failed to add torrent: " + e.message }));
           return;
@@ -311,11 +298,11 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // ── POST /api/selectfile ──
+  // POST /api/selectfile
   if (req.method === "POST" && u.pathname === "/api/selectfile") {
     let body = "";
-    req.on("data", d => body += d);
-    req.on("end", () => {
+    req.on("data", function(d) { body += d; });
+    req.on("end", function() {
       let roomId, fileIndex;
       try {
         const parsed = JSON.parse(body);
@@ -328,51 +315,50 @@ const server = http.createServer((req, res) => {
       }
       const rs = getRoomState(roomId);
       if (!rs) { res.writeHead(404, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error: "Room not found" })); return; }
-      if (!rs.videoFiles.length) { res.writeHead(400, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error: "No video files loaded yet" })); return; }
+      if (!rs.videoFiles.length) { res.writeHead(400, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error: "No files loaded yet" })); return; }
 
       const ok = selectFileForRoom(roomId, fileIndex);
       if (!ok) { res.writeHead(400, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error: "Invalid file index" })); return; }
 
-      // Broadcast to room so all clients switch to the same file
       if (rooms[roomId]) {
-        const msg = JSON.stringify({ type: "fileselect", fileIndex, sender: "server" });
+        const msg = JSON.stringify({ type: "fileselect", fileIndex: fileIndex, sender: "server" });
         for (const ws of rooms[roomId]) {
           if (ws.readyState === 1) ws.send(msg);
         }
       }
 
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true, file: rs.file?.name }));
+      res.end(JSON.stringify({ ok: true, file: rs.file ? rs.file.name : null }));
     });
     return;
   }
 
-  // ── GET /api/tracks ──
+  // GET /api/tracks
   if (req.method === "GET" && u.pathname === "/api/tracks") {
     const roomId = u.searchParams.get("room");
     const rs = roomId ? getRoomState(roomId) : null;
     res.writeHead(200, { "Content-Type": "application/json" });
-    const trackData = rs?.trackInfo || { subtitles: [], audio: [], probing: !!(rs?.file) };
-    res.end(JSON.stringify({ ...trackData, hasAutoSub: !!(rs?.autoSubContent) }));
+    const trackData = (rs && rs.trackInfo) || { subtitles: [], audio: [], probing: !!(rs && rs.file) };
+    res.end(JSON.stringify(Object.assign({}, trackData, { hasAutoSub: !!(rs && rs.autoSubContent) })));
     return;
   }
 
-  // ── GET /subtitle/auto ──
+  // GET /subtitle/auto
   if (req.method === "GET" && u.pathname === "/subtitle/auto") {
     const roomId = u.searchParams.get("room");
     const rs = roomId ? getRoomState(roomId) : null;
-    if (!rs?.autoSubContent) { res.writeHead(404); res.end("No auto subtitle available"); return; }
+    if (!rs || !rs.autoSubContent) { res.writeHead(404); res.end("No auto subtitle available"); return; }
     res.writeHead(200, { "Content-Type": "text/vtt; charset=utf-8", "Access-Control-Allow-Origin": "*" });
     res.end(rs.autoSubContent);
     return;
   }
 
-  // ── GET /subtitle/:trackId ──
+  // GET /subtitle/:trackId
   if (req.method === "GET" && u.pathname.startsWith("/subtitle/")) {
     const roomId = u.searchParams.get("room");
     const rs = roomId ? getRoomState(roomId) : null;
     const trackId = u.pathname.split("/")[2];
-    if (!rs?.file) { res.writeHead(404); res.end("Not found"); return; }
+    if (!rs || !rs.file) { res.writeHead(404); res.end("Not found"); return; }
 
     res.setHeader("Content-Type", "text/vtt; charset=utf-8");
     res.setHeader("Access-Control-Allow-Origin", "*");
@@ -388,9 +374,9 @@ const server = http.createServer((req, res) => {
       } else {
         let buf = "";
         const stream = subFile.createReadStream();
-        stream.on("data", c => buf += c.toString());
-        stream.on("end", () => res.end(srtToVtt(buf)));
-        stream.on("error", () => res.end("WEBVTT\n\n"));
+        stream.on("data", function(c) { buf += c.toString(); });
+        stream.on("end", function() { res.end(srtToVtt(buf)); });
+        stream.on("error", function() { res.end("WEBVTT\n\n"); });
       }
       return;
     }
@@ -403,28 +389,28 @@ const server = http.createServer((req, res) => {
     const ff = Ffmpeg()
       .input(rs.file.createReadStream())
       .inputFormat(inputFormat)
-      .outputOptions([`-map 0:${idx}`, "-f webvtt"])
-      .on("error", e => { console.error("[sub]", e.message); try { res.end(); } catch (_) {} })
+      .outputOptions(["-map 0:" + idx, "-f webvtt"])
+      .on("error", function(e) { console.error("[sub]", e.message); try { res.end(); } catch (_) {} })
       .pipe(res, { end: true });
-    req.on("close", () => { try { ff.kill("SIGKILL"); } catch (_) {} });
+    req.on("close", function() { try { ff.kill("SIGKILL"); } catch (_) {} });
     return;
   }
 
-  // ── GET /api/status ──
+  // GET /api/status
   if (req.method === "GET" && u.pathname === "/api/status") {
     const roomId = u.searchParams.get("room");
     const rs = roomId ? getRoomState(roomId) : null;
-    if (!rs?.torrent) { res.writeHead(200); res.end(JSON.stringify({ loading: true, ready: false })); return; }
+    if (!rs || !rs.torrent) { res.writeHead(200); res.end(JSON.stringify({ loading: true, ready: false })); return; }
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({
       ready: !!rs.file,
       loading: !rs.file,
       awaitingFileSelect: rs.videoFiles.length > 1 && !rs.file,
       name: rs.torrent.name,
-      file: rs.file?.name,
-      size: rs.file?.length,
-      streamUrl: rs.file ? `/stream?room=${encodeURIComponent(roomId)}` : null,
-      files: rs.videoFiles.map((f, i) => ({ index: i, name: f.name, size: f.length })),
+      file: rs.file ? rs.file.name : null,
+      size: rs.file ? rs.file.length : null,
+      streamUrl: rs.file ? "/stream?room=" + encodeURIComponent(roomId) : null,
+      files: rs.videoFiles.map(function(f, i) { return { index: i, name: f.name, size: f.length }; }),
       progress: rs.torrent.progress,
       downloadSpeed: rs.torrent.downloadSpeed,
       numPeers: rs.torrent.numPeers,
@@ -433,11 +419,11 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // ── GET /stream ──
+  // GET /stream
   if (req.method === "GET" && u.pathname === "/stream") {
     const roomId = u.searchParams.get("room");
     const rs = roomId ? getRoomState(roomId) : null;
-    if (!rs?.file) { res.writeHead(404); res.end("No active stream"); return; }
+    if (!rs || !rs.file) { res.writeHead(404); res.end("No active stream"); return; }
 
     const activeFile = rs.file;
     const activeTorrent = rs.torrent;
@@ -453,15 +439,14 @@ const server = http.createServer((req, res) => {
       const ff = Ffmpeg()
         .input(activeFile.createReadStream())
         .inputFormat(inputFormat)
-        .outputOptions(["-map 0:v:0", `-map 0:a:${audioIdx}`, "-c:v copy", "-c:a aac", "-b:a 192k", "-f mp4", "-movflags frag_keyframe+empty_moov"])
-        .on("error", e => { console.error("[audio remux]", e.message); try { res.end(); } catch (_) {} })
+        .outputOptions(["-map 0:v:0", "-map 0:a:" + audioIdx, "-c:v copy", "-c:a aac", "-b:a 192k", "-f mp4", "-movflags frag_keyframe+empty_moov"])
+        .on("error", function(e) { console.error("[audio remux]", e.message); try { res.end(); } catch (_) {} })
         .pipe(res, { end: true });
-      req.on("close", () => { try { ff.kill("SIGKILL"); } catch (_) {} });
+      req.on("close", function() { try { ff.kill("SIGKILL"); } catch (_) {} });
       return;
     }
 
     if (compatMode || transcodeMode || !["mp4", "m4v"].includes(ext)) {
-      console.log(`[compat][${roomId}] ${transcodeMode ? "transcoding" : "remuxing"}: ${activeFile.name}`);
       res.writeHead(200, { "Content-Type": "video/mp4" });
       const videoOpts = transcodeMode
         ? ["-c:v libx264", "-preset ultrafast", "-crf 23", "-pix_fmt yuv420p", "-profile:v main", "-level 4.0"]
@@ -469,24 +454,15 @@ const server = http.createServer((req, res) => {
       const ff = Ffmpeg()
         .input(activeFile.createReadStream())
         .inputFormat(inputFormat)
-        .outputOptions([
-          "-map 0:v:0", "-map 0:a:0",
-          ...videoOpts,
-          "-c:a aac", "-ac 2", "-b:a 192k",
-          "-f mp4", "-movflags frag_keyframe+empty_moov+default_base_moof"
-        ])
-        .on("error", e => { console.error("[compat remux]", e.message); try { res.end(); } catch (_) {} })
+        .outputOptions(["-map 0:v:0", "-map 0:a:0"].concat(videoOpts).concat(["-c:a aac", "-ac 2", "-b:a 192k", "-f mp4", "-movflags frag_keyframe+empty_moov+default_base_moof"]))
+        .on("error", function(e) { console.error("[compat remux]", e.message); try { res.end(); } catch (_) {} })
         .pipe(res, { end: true });
-      req.on("close", () => { try { ff.kill("SIGKILL"); } catch (_) {} });
+      req.on("close", function() { try { ff.kill("SIGKILL"); } catch (_) {} });
       return;
     }
 
     const fileSize = activeFile.length;
-    const mimeTypes = {
-      mp4: "video/mp4", webm: "video/webm", mkv: "video/x-matroska",
-      avi: "video/x-msvideo", mov: "video/quicktime", ogv: "video/ogg",
-      ogg: "video/ogg", ts: "video/mp2t", m4v: "video/mp4"
-    };
+    const mimeTypes = { mp4: "video/mp4", webm: "video/webm", mkv: "video/x-matroska", avi: "video/x-msvideo", mov: "video/quicktime", ogv: "video/ogg", ogg: "video/ogg", ts: "video/mp2t", m4v: "video/mp4" };
     const contentType = mimeTypes[ext] || "video/mp4";
     const rangeHeader = req.headers.range;
 
@@ -501,46 +477,41 @@ const server = http.createServer((req, res) => {
         const endPiece = Math.floor(end / pieceLen);
         try { activeTorrent.critical(startPiece, endPiece + 2); } catch (e) {}
       }
-      res.writeHead(206, {
-        "Content-Range": `bytes ${start}-${end}/${fileSize}`,
-        "Accept-Ranges": "bytes",
-        "Content-Length": chunkSize,
-        "Content-Type": contentType,
-      });
-      const stream = activeFile.createReadStream({ start, end });
+      res.writeHead(206, { "Content-Range": "bytes " + start + "-" + end + "/" + fileSize, "Accept-Ranges": "bytes", "Content-Length": chunkSize, "Content-Type": contentType });
+      const stream = activeFile.createReadStream({ start: start, end: end });
       stream.pipe(res);
-      stream.on("error", e => { console.error("[stream]", e.message); res.end(); });
+      stream.on("error", function(e) { console.error("[stream]", e.message); res.end(); });
     } else {
       res.writeHead(200, { "Content-Length": fileSize, "Content-Type": contentType, "Accept-Ranges": "bytes" });
       const stream = activeFile.createReadStream();
       stream.pipe(res);
-      stream.on("error", e => { console.error("[stream]", e.message); res.end(); });
+      stream.on("error", function(e) { console.error("[stream]", e.message); res.end(); });
     }
     return;
   }
 
-  // ── GET /api/search ──
+  // GET /api/search
   if (req.method === "GET" && u.pathname === "/api/search") {
     const q = u.searchParams.get("q");
     if (!q) { res.writeHead(400); res.end(JSON.stringify({ error: "Missing q" })); return; }
-    (async () => {
+    (async function() {
       const enc = encodeURIComponent(q);
-      const [mr, sr] = await Promise.all([
-        fetch(`https://v3-cinemeta.strem.io/catalog/movie/top/search=${enc}.json`),
-        fetch(`https://v3-cinemeta.strem.io/catalog/series/top/search=${enc}.json`)
+      const responses = await Promise.all([
+        fetch("https://v3-cinemeta.strem.io/catalog/movie/top/search=" + enc + ".json"),
+        fetch("https://v3-cinemeta.strem.io/catalog/series/top/search=" + enc + ".json")
       ]);
-      const [movies, series] = await Promise.all([mr.json(), sr.json()]);
-      const results = [
-        ...(movies.metas || []).slice(0, 6).map(m => ({ ...m, type: "movie" })),
-        ...(series.metas || []).slice(0, 4).map(s => ({ ...s, type: "series" }))
-      ];
+      const bodies = await Promise.all(responses.map(function(r) { return r.json(); }));
+      const results = [].concat(
+        (bodies[0].metas || []).slice(0, 6).map(function(m) { return Object.assign({}, m, { type: "movie" }); }),
+        (bodies[1].metas || []).slice(0, 4).map(function(s) { return Object.assign({}, s, { type: "series" }); })
+      );
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify(results));
-    })().catch(e => { res.writeHead(500); res.end(JSON.stringify({ error: e.message })); });
+    })().catch(function(e) { res.writeHead(500); res.end(JSON.stringify({ error: e.message })); });
     return;
   }
 
-  // ── GET /api/streams ──
+  // GET /api/streams
   if (req.method === "GET" && u.pathname === "/api/streams") {
     const imdb = u.searchParams.get("imdb");
     const type = u.searchParams.get("type") || "movie";
@@ -548,11 +519,69 @@ const server = http.createServer((req, res) => {
     const episode = u.searchParams.get("episode");
     if (!imdb) { res.writeHead(400); res.end(JSON.stringify({ error: "Missing imdb" })); return; }
     const url = (type === "series" && season && episode)
-      ? `https://torrentio.strem.fun/stream/series/${imdb}:${season}:${episode}.json`
-      : `https://torrentio.strem.fun/stream/movie/${imdb}.json`;
-    (async () => {
+      ? "https://torrentio.strem.fun/stream/series/" + imdb + ":" + season + ":" + episode + ".json"
+      : "https://torrentio.strem.fun/stream/movie/" + imdb + ".json";
+    (async function() {
       const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
       const data = await r.json();
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify(data.streams || []));
-    })().catch(e => { res.write
+    })().catch(function(e) { res.writeHead(500); res.end(JSON.stringify({ error: e.message })); });
+    return;
+  }
+
+  // Static
+  if (req.method === "GET" && (u.pathname === "/" || u.pathname === "/index.html")) {
+    const htmlPath = path.join(__dirname, "public", "index.html");
+    if (!fs.existsSync(htmlPath)) { res.writeHead(404); res.end("index.html not found"); return; }
+    res.writeHead(200, { "Content-Type": "text/html" });
+    fs.createReadStream(htmlPath).pipe(res);
+    return;
+  }
+
+  res.writeHead(404); res.end("Not found");
+});
+
+const wss = new WebSocketServer({ server: server, path: "/ws" });
+wss.on("connection", function(ws) {
+  ws._roomId = null;
+  ws._name = "Viewer";
+  ws.on("message", function(raw) {
+    let msg;
+    try { msg = JSON.parse(raw); } catch (e) { return; }
+    if (msg.type === "join") {
+      if (!rooms[msg.roomId]) rooms[msg.roomId] = new Set();
+      ws._roomId = msg.roomId;
+      ws._name = msg.name || "Viewer";
+      rooms[msg.roomId].add(ws);
+      broadcast(msg.roomId, ws, JSON.stringify({ type: "joined", sender: ws._name }));
+      console.log("[room] " + ws._name + " joined " + msg.roomId + " (" + rooms[msg.roomId].size + " total)");
+      return;
+    }
+    if (["play", "pause", "seek", "chat", "magnet", "subtitle", "subtitle_upload", "fileselect"].indexOf(msg.type) !== -1 && ws._roomId) {
+      broadcast(ws._roomId, ws, JSON.stringify(Object.assign({}, msg, { sender: ws._name })));
+    }
+  });
+  ws.on("close", function() {
+    const rid = ws._roomId;
+    if (rid && rooms[rid]) {
+      rooms[rid].delete(ws);
+      broadcast(rid, ws, JSON.stringify({ type: "left", sender: ws._name }));
+      if (rooms[rid].size === 0) {
+        delete rooms[rid];
+        setTimeout(function() {
+          if (!rooms[rid]) cleanupRoomTorrent(rid);
+        }, 30000);
+      }
+    }
+  });
+});
+
+function broadcast(roomId, sender, data) {
+  if (!rooms[roomId]) return;
+  for (const ws of rooms[roomId]) {
+    if (ws !== sender && ws.readyState === 1) ws.send(data);
+  }
+}
+
+server.listen(PORT, function() { console.log("\n  flikroom running at http://localhost:" + PORT + "\n"); });
