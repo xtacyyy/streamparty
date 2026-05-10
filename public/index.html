@@ -956,4 +956,40 @@ function renderStreams(container, streams) {
     const qClass = q === '4K' ? 'q-4k' : q === '1080p' ? 'q-1080p' : q === '720p' ? 'q-720p' : 'q-sd';
     const lines = (stream.title || '').split('\n');
     const name = lines[0] || stream.name || '';
-    const meta = li
+    const meta = lines.slice(1).join(' · ');
+    const el = document.createElement('div');
+    el.className = 'stream-item';
+    el.innerHTML = `
+      <span class="stream-quality ${qClass}">${q}</span>
+      <div class="stream-info">
+        <div class="stream-name">${name}</div>
+        ${meta ? `<div class="stream-meta">${meta}</div>` : ''}
+      </div>`;
+    el.onclick = () => {
+      const dn = encodeURIComponent(stream.behaviorHints?.filename || name);
+      document.getElementById('magnetInput').value = `magnet:?xt=urn:btih:${stream.infoHash}&dn=${dn}`;
+      closeModal();
+      loadTorrent();
+    };
+    container.appendChild(el);
+  });
+}
+
+function closeModal() {
+  document.getElementById('modalOverlay').classList.remove('open');
+}
+
+// ── Chat ──
+function sendChat() {
+  const input = document.getElementById('chatInput');
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  chatMsg(getName(), text);
+  wsSend({ type: 'chat', text });
+}
+
+updateAvatars();
+</script>
+</body>
+</html>
