@@ -478,6 +478,14 @@ function connectWS(id) {
       vid.currentTime = msg.time;
       sysMsg(`${msg.sender} jumped to ${fmtTime(msg.time)}`);
       setTimeout(() => syncing = false, 500);
+    } else if (msg.type === 'fileselect') {
+      // Another room member picked a file — call selectfile on our end too
+      fetch('/api/selectfile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roomId, fileIndex: msg.fileIndex })
+      }).catch(() => {});
+      sysMsg(`${msg.sender} selected a file`);
     } else if (msg.type === 'subtitle') {
       const subSel = document.getElementById('subTrack');
       const trackId = msg.trackId;
@@ -565,6 +573,16 @@ async function loadTorrent(broadcast = true) {
         document.getElementById('tiPeers').textContent = s.numPeers;
         document.getElementById('dlSpeed').textContent = fmtBytes(s.downloadSpeed);
         document.getElementById('torPeers').textContent = s.numPeers + ' peers';
+      }
+
+      // Multi-file torrent — show episode picker
+      if (!videoStarted && s.awaitingFileSelect && s.files?.length > 1) {
+        if (!statusInterval._pickerShown) {
+          statusInterval._pickerShown = true;
+          setStatus('Select an episode to play');
+          showFilePicker(s.files);
+        }
+        return;
       }
 
       if (!videoStarted && s.ready && s.streamUrl) {
@@ -963,33 +981,4 @@ function renderStreams(container, streams) {
       <span class="stream-quality ${qClass}">${q}</span>
       <div class="stream-info">
         <div class="stream-name">${name}</div>
-        ${meta ? `<div class="stream-meta">${meta}</div>` : ''}
-      </div>`;
-    el.onclick = () => {
-      const dn = encodeURIComponent(stream.behaviorHints?.filename || name);
-      document.getElementById('magnetInput').value = `magnet:?xt=urn:btih:${stream.infoHash}&dn=${dn}`;
-      closeModal();
-      loadTorrent();
-    };
-    container.appendChild(el);
-  });
-}
-
-function closeModal() {
-  document.getElementById('modalOverlay').classList.remove('open');
-}
-
-// ── Chat ──
-function sendChat() {
-  const input = document.getElementById('chatInput');
-  const text = input.value.trim();
-  if (!text) return;
-  input.value = '';
-  chatMsg(getName(), text);
-  wsSend({ type: 'chat', text });
-}
-
-updateAvatars();
-</script>
-</body>
-</html>
+        ${meta ? `<div class="stream-m

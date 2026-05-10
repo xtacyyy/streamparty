@@ -26,7 +26,7 @@ const VIDEO_EXTS = ["mp4", "mkv", "webm", "avi", "mov", "m4v", "ogv", "ogg", "ts
 const rooms = {};
 
 // ── Per-room torrent state ──
-// roomTorrents[roomId] = { torrent, file, trackInfo, subtitleFiles, autoSubContent }
+// roomTorrents[roomId] = { torrent, file, videoFiles, trackInfo, subtitleFiles, autoSubContent }
 const roomTorrents = {};
 
 function getRoomState(roomId) {
@@ -36,8 +36,8 @@ function getRoomState(roomId) {
 function initRoomState(roomId) {
   if (!roomTorrents[roomId]) {
     roomTorrents[roomId] = {
-      torrent: null, file: null, trackInfo: null,
-      subtitleFiles: [], autoSubContent: null
+      torrent: null, file: null, videoFiles: [],
+      trackInfo: null, subtitleFiles: [], autoSubContent: null
     };
   }
   return roomTorrents[roomId];
@@ -127,12 +127,52 @@ function infoHashFromMagnet(magnet) {
   return m ? m[1].toLowerCase() : null;
 }
 
-function findVideoFile(torrent) {
-  return torrent.files.reduce((best, f) => {
-    const ext = f.name.split(".").pop().toLowerCase();
-    if (VIDEO_EXTS.includes(ext)) return (!best || f.length > best.length) ? f : best;
-    return best;
-  }, null);
+// ── Select a specific video file within a room's torrent ──
+function selectFileForRoom(roomId, fileIndex) {
+  const rs = getRoomState(roomId);
+  if (!rs || !rs.videoFiles.length) return false;
+  const file = rs.videoFiles[fileIndex];
+  if (!file) return false;
+
+  // Deselect all video files, then select the chosen one
+  rs.videoFiles.forEach(f => { try { f.deselect(); } catch (e) {} });
+  try { file.select(); } catch (e) {}
+
+  rs.file = file;
+  rs.trackInfo = null;
+  rs.autoSubContent = null;
+
+  if (rs.torrent) rs.torrent.strategy = "sequential";
+
+  console.log(`[torrent][${roomId}] file selected: ${file.name}`);
+
+  fetchAutoSubtitle(file.name).then(vtt => { rs.autoSubContent = vtt; });
+
+  const externalSubs = rs.subtitleFiles.map((f, i) => ({
+    index: `ext:${i}`,
+    lang: "und",
+    title: f.name.replace(/\.[^.]+$/, "").replace(/\./g, " ").trim()
+  }));
+
+  setTimeout(() => {
+    Ffmpeg.ffprobe(`http://localhost:${PORT}/stream?room=${encodeURIComponent(roomId)}`, (err, meta) => {
+      const streams = err ? [] : (meta.streams || []);
+      const embeddedSubs = streams.filter(s => s.codec_type === "subtitle").map(s => ({
+        index: s.index,
+        lang: s.tags?.language || "und",
+        title: s.tags?.title || (s.tags?.language ? s.tags.language.toUpperCase() : `Embedded ${s.index}`)
+      }));
+      const audio = streams.filter(s => s.codec_type === "audio").map((s, i) => ({
+        index: s.index,
+        lang: s.tags?.language || "und",
+        title: s.tags?.title || (s.tags?.language ? s.tags.language.toUpperCase() : `Track ${i + 1}`)
+      }));
+      rs.trackInfo = { subtitles: [...externalSubs, ...embeddedSubs], audio };
+      console.log(`[tracks][${roomId}] ${rs.trackInfo.subtitles.length} subtitle(s), ${rs.trackInfo.audio.length} audio track(s)`);
+    });
+  }, 3000);
+
+  return true;
 }
 
 // ── Disk cleanup ──
@@ -192,7 +232,6 @@ const server = http.createServer((req, res) => {
       const newHash = infoHashFromMagnet(magnet);
       const curHash = rs.torrent?.infoHash?.toLowerCase();
 
-      // Same torrent already active for this room — no-op
       if (newHash && curHash && newHash === curHash) {
         console.log(`[torrent][${roomId}] already active, skipping reload`);
         res.writeHead(200, { "Content-Type": "application/json" });
@@ -200,7 +239,6 @@ const server = http.createServer((req, res) => {
         return;
       }
 
-      // Remove previous torrent for this room (but only if no other room uses it)
       if (rs.torrent) {
         const oldHash = rs.torrent.infoHash;
         const sharedByOther = Object.entries(roomTorrents).some(
@@ -209,8 +247,8 @@ const server = http.createServer((req, res) => {
         if (!sharedByOther) {
           try { client.remove(oldHash, { destroyStore: false }); } catch (e) {}
         }
-        rs.torrent = null; rs.file = null; rs.trackInfo = null;
-        rs.subtitleFiles = []; rs.autoSubContent = null;
+        rs.torrent = null; rs.file = null; rs.videoFiles = [];
+        rs.trackInfo = null; rs.subtitleFiles = []; rs.autoSubContent = null;
       }
 
       console.log(`[torrent][${roomId}] loading: ${magnet.slice(0, 80)}`);
@@ -218,53 +256,38 @@ const server = http.createServer((req, res) => {
       const setupTorrent = (torrent) => {
         rs.torrent = torrent;
         rs.trackInfo = null; rs.subtitleFiles = []; rs.autoSubContent = null;
-        const file = findVideoFile(torrent);
-        if (!file) { console.log(`[torrent][${roomId}] no video file found`); return; }
-        rs.file = file;
+        rs.file = null; rs.videoFiles = [];
 
-        rs.subtitleFiles = torrent.files.filter(f => SUBTITLE_EXTS.includes(f.name.split(".").pop().toLowerCase()));
+        rs.subtitleFiles = torrent.files.filter(f =>
+          SUBTITLE_EXTS.includes(f.name.split(".").pop().toLowerCase())
+        );
         rs.subtitleFiles.forEach(f => f.select());
         if (rs.subtitleFiles.length) console.log(`[torrent][${roomId}] ${rs.subtitleFiles.length} subtitle file(s)`);
 
-        torrent.files.forEach(f => {
-          if (f === file || rs.subtitleFiles.includes(f)) return;
-          f.deselect();
-        });
-        torrent.strategy = "sequential";
-        const pieceCount = torrent.pieces.length;
-        const criticalEnd = Math.max(10, Math.floor(pieceCount * 0.1));
-        try { torrent.critical(0, criticalEnd); } catch (e) {}
-        console.log(`[torrent][${roomId}] ready: ${file.name} | pieces: ${pieceCount} | critical: 0-${criticalEnd}`);
+        // All video files sorted by path for natural episode ordering
+        rs.videoFiles = torrent.files
+          .filter(f => VIDEO_EXTS.includes(f.name.split(".").pop().toLowerCase()))
+          .sort((a, b) => a.path.localeCompare(b.path, undefined, { numeric: true, sensitivity: "base" }));
 
-        fetchAutoSubtitle(file.name).then(vtt => { rs.autoSubContent = vtt; });
+        if (rs.videoFiles.length === 0) {
+          console.log(`[torrent][${roomId}] no video files found`);
+          return;
+        }
 
-        const externalSubs = rs.subtitleFiles.map((f, i) => ({
-          index: `ext:${i}`,
-          lang: "und",
-          title: f.name.replace(/\.[^.]+$/, "").replace(/\./g, " ").trim()
-        }));
-
-        // Probe embedded tracks after short delay
-        setTimeout(() => {
-          Ffmpeg.ffprobe(`http://localhost:${PORT}/stream?room=${encodeURIComponent(roomId)}`, (err, meta) => {
-            const streams = err ? [] : (meta.streams || []);
-            const embeddedSubs = streams.filter(s => s.codec_type === "subtitle").map(s => ({
-              index: s.index,
-              lang: s.tags?.language || "und",
-              title: s.tags?.title || (s.tags?.language ? s.tags.language.toUpperCase() : `Embedded ${s.index}`)
-            }));
-            const audio = streams.filter(s => s.codec_type === "audio").map((s, i) => ({
-              index: s.index,
-              lang: s.tags?.language || "und",
-              title: s.tags?.title || (s.tags?.language ? s.tags.language.toUpperCase() : `Track ${i + 1}`)
-            }));
-            rs.trackInfo = { subtitles: [...externalSubs, ...embeddedSubs], audio };
-            console.log(`[tracks][${roomId}] ${rs.trackInfo.subtitles.length} subtitle(s), ${rs.trackInfo.audio.length} audio track(s)`);
-          });
-        }, 3000);
+        if (rs.videoFiles.length === 1) {
+          // Single file — auto-select
+          selectFileForRoom(roomId, 0);
+          const pieceCount = torrent.pieces.length;
+          const criticalEnd = Math.max(10, Math.floor(pieceCount * 0.1));
+          try { torrent.critical(0, criticalEnd); } catch (e) {}
+          console.log(`[torrent][${roomId}] single file auto-selected: ${rs.videoFiles[0].name}`);
+        } else {
+          // Multiple files — deselect all video files, wait for user to pick
+          rs.videoFiles.forEach(f => { try { f.deselect(); } catch (e) {} });
+          console.log(`[torrent][${roomId}] ${rs.videoFiles.length} video files found — awaiting selection`);
+        }
       };
 
-      // Reuse torrent if another room is already downloading same hash
       const existingTorrent = newHash
         ? (client.torrents.find(t => t.infoHash === newHash) || null)
         : null;
@@ -284,6 +307,42 @@ const server = http.createServer((req, res) => {
 
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true, loading: true }));
+    });
+    return;
+  }
+
+  // ── POST /api/selectfile ──
+  if (req.method === "POST" && u.pathname === "/api/selectfile") {
+    let body = "";
+    req.on("data", d => body += d);
+    req.on("end", () => {
+      let roomId, fileIndex;
+      try {
+        const parsed = JSON.parse(body);
+        roomId = parsed.roomId;
+        fileIndex = parseInt(parsed.fileIndex);
+      } catch (e) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Invalid JSON" }));
+        return;
+      }
+      const rs = getRoomState(roomId);
+      if (!rs) { res.writeHead(404, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error: "Room not found" })); return; }
+      if (!rs.videoFiles.length) { res.writeHead(400, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error: "No video files loaded yet" })); return; }
+
+      const ok = selectFileForRoom(roomId, fileIndex);
+      if (!ok) { res.writeHead(400, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error: "Invalid file index" })); return; }
+
+      // Broadcast to room so all clients switch to the same file
+      if (rooms[roomId]) {
+        const msg = JSON.stringify({ type: "fileselect", fileIndex, sender: "server" });
+        for (const ws of rooms[roomId]) {
+          if (ws.readyState === 1) ws.send(msg);
+        }
+      }
+
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, file: rs.file?.name }));
     });
     return;
   }
@@ -360,10 +419,12 @@ const server = http.createServer((req, res) => {
     res.end(JSON.stringify({
       ready: !!rs.file,
       loading: !rs.file,
+      awaitingFileSelect: rs.videoFiles.length > 1 && !rs.file,
       name: rs.torrent.name,
       file: rs.file?.name,
       size: rs.file?.length,
       streamUrl: rs.file ? `/stream?room=${encodeURIComponent(roomId)}` : null,
+      files: rs.videoFiles.map((f, i) => ({ index: i, name: f.name, size: f.length })),
       progress: rs.torrent.progress,
       downloadSpeed: rs.torrent.downloadSpeed,
       numPeers: rs.torrent.numPeers,
@@ -386,7 +447,6 @@ const server = http.createServer((req, res) => {
     const ext = activeFile.name.split(".").pop().toLowerCase();
     const inputFormat = ext === "mkv" ? "matroska" : ext;
 
-    // Audio track switch — remux with selected audio stream
     if (audioParam !== null) {
       const audioIdx = parseInt(audioParam);
       res.writeHead(200, { "Content-Type": "video/mp4" });
@@ -400,8 +460,6 @@ const server = http.createServer((req, res) => {
       return;
     }
 
-    // Compat / transcode mode — repackage as fragmented MP4 via FFmpeg
-    // Uses createReadStream() directly to avoid recursive HTTP loop
     if (compatMode || transcodeMode || !["mp4", "m4v"].includes(ext)) {
       console.log(`[compat][${roomId}] ${transcodeMode ? "transcoding" : "remuxing"}: ${activeFile.name}`);
       res.writeHead(200, { "Content-Type": "video/mp4" });
@@ -423,7 +481,6 @@ const server = http.createServer((req, res) => {
       return;
     }
 
-    // Native range-request streaming (MP4/M4V)
     const fileSize = activeFile.length;
     const mimeTypes = {
       mp4: "video/mp4", webm: "video/webm", mkv: "video/x-matroska",
@@ -498,63 +555,4 @@ const server = http.createServer((req, res) => {
       const data = await r.json();
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify(data.streams || []));
-    })().catch(e => { res.writeHead(500); res.end(JSON.stringify({ error: e.message })); });
-    return;
-  }
-
-  // ── Static ──
-  if (req.method === "GET" && (u.pathname === "/" || u.pathname === "/index.html")) {
-    const htmlPath = path.join(__dirname, "public", "index.html");
-    if (!fs.existsSync(htmlPath)) { res.writeHead(404); res.end("index.html not found"); return; }
-    res.writeHead(200, { "Content-Type": "text/html" });
-    fs.createReadStream(htmlPath).pipe(res);
-    return;
-  }
-
-  res.writeHead(404); res.end("Not found");
-});
-
-// ── WebSocket ──
-const wss = new WebSocketServer({ server, path: "/ws" });
-wss.on("connection", (ws) => {
-  ws._roomId = null;
-  ws._name = "Viewer";
-  ws.on("message", (raw) => {
-    let msg;
-    try { msg = JSON.parse(raw); } catch { return; }
-    if (msg.type === "join") {
-      if (!rooms[msg.roomId]) rooms[msg.roomId] = new Set();
-      ws._roomId = msg.roomId;
-      ws._name = msg.name || "Viewer";
-      rooms[msg.roomId].add(ws);
-      broadcast(msg.roomId, ws, JSON.stringify({ type: "joined", sender: ws._name }));
-      console.log(`[room] ${ws._name} joined ${msg.roomId} (${rooms[msg.roomId].size} total)`);
-      return;
-    }
-    if (["play", "pause", "seek", "chat", "magnet", "subtitle", "subtitle_upload"].includes(msg.type) && ws._roomId) {
-      broadcast(ws._roomId, ws, JSON.stringify({ ...msg, sender: ws._name }));
-    }
-  });
-  ws.on("close", () => {
-    const rid = ws._roomId;
-    if (rid && rooms[rid]) {
-      rooms[rid].delete(ws);
-      broadcast(rid, ws, JSON.stringify({ type: "left", sender: ws._name }));
-      if (rooms[rid].size === 0) {
-        delete rooms[rid];
-        setTimeout(() => {
-          if (!rooms[rid]) cleanupRoomTorrent(rid);
-        }, 30000);
-      }
-    }
-  });
-});
-
-function broadcast(roomId, sender, data) {
-  if (!rooms[roomId]) return;
-  for (const ws of rooms[roomId]) {
-    if (ws !== sender && ws.readyState === 1) ws.send(data);
-  }
-}
-
-server.listen(PORT, () => console.log(`\n  flikroom running at http://localhost:${PORT}\n`));
+    })().catch(e => { res.write
