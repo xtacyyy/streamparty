@@ -483,11 +483,7 @@ function connectWS(id) {
         showFilePicker(msg.files);
       }
     } else if (msg.type === 'fileselect') {
-      fetch('/api/selectfile', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ roomId: roomId, fileIndex: msg.fileIndex })
-      }).catch(function(){});
+      closeModal();
       sysMsg(msg.sender + ' selected a file');
     } else if (msg.type === 'subtitle') {
       const subSel = document.getElementById('subTrack');

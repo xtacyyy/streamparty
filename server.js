@@ -325,12 +325,7 @@ const server = http.createServer(function(req, res) {
       const ok = selectFileForRoom(roomId, fileIndex);
       if (!ok) { res.writeHead(400, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error: "Invalid file index" })); return; }
 
-      if (rooms[roomId]) {
-        const msg = JSON.stringify({ type: "fileselect", fileIndex: fileIndex, sender: "server" });
-        for (const ws of rooms[roomId]) {
-          if (ws.readyState === 1) ws.send(msg);
-        }
-      }
+      notifyRoom(roomId, { type: "torrentready", file: rs.file ? rs.file.name : null });
 
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true, file: rs.file ? rs.file.name : null }));
