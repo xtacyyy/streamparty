@@ -265,7 +265,9 @@ const server = http.createServer(function(req, res) {
           .sort(function(a, b) { return a.path.localeCompare(b.path, undefined, { numeric: true, sensitivity: "base" }); });
 
         if (rs.videoFiles.length === 0) {
-          console.log("[torrent][" + roomId + "] no video files found");
+          const fileNames = torrent.files.map(function(f) { return f.name; }).join(", ");
+          console.log("[torrent][" + roomId + "] no video files found. files: " + fileNames);
+          notifyRoom(roomId, { type: "torrenterror", message: "No playable video files in this torrent. Files: " + fileNames.slice(0, 200) });
           return;
         }
 

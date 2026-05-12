@@ -477,6 +477,11 @@ function connectWS(id) {
       setTimeout(function() { syncing = false; }, 500);
     } else if (msg.type === 'torrentready') {
       startVideoPlayback(msg.file);
+    } else if (msg.type === 'torrenterror') {
+      clearInterval(statusInterval);
+      setStatus(msg.message || 'Torrent error');
+      toast(msg.message || 'Torrent error', 6000);
+      sysMsg('<strong style="color:var(--danger)">' + (msg.message || 'Torrent error') + '</strong>');
     } else if (msg.type === 'awaitingfileselect') {
       if (!videoStarted && msg.files) {
         setStatus('Select an episode to play');
