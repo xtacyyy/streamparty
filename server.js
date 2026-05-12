@@ -250,7 +250,20 @@ const server = http.createServer(function(req, res) {
 
       console.log("[torrent][" + roomId + "] loading: " + magnet.slice(0, 80));
 
+      const metadataTimeout = setTimeout(function() {
+        const current = roomTorrents[roomId];
+        if (!current || !current.torrent || !current.torrent.files || current.torrent.files.length === 0) {
+          console.log("[torrent][" + roomId + "] metadata timeout — no peers found");
+          notifyRoom(roomId, { type: "torrenterror", message: "Could not find peers for this torrent. It may be dead or have no seeds." });
+          if (current && current.torrent) {
+            try { client.remove(current.torrent.infoHash, { destroyStore: false }); } catch (e) {}
+            current.torrent = null;
+          }
+        }
+      }, 90000);
+
       const setupTorrent = function(torrent) {
+        clearTimeout(metadataTimeout);
         rs.torrent = torrent;
         rs.trackInfo = null; rs.subtitleFiles = []; rs.autoSubContent = null;
         rs.file = null; rs.videoFiles = [];
