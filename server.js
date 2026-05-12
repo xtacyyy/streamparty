@@ -19,6 +19,10 @@ const PORT = process.env.PORT || 3000;
 const DOWNLOADS_PATH = path.join(__dirname, "downloads");
 const client = new WebTorrent();
 
+process.on("uncaughtException", function(e) { console.error("[uncaught]", e && e.message ? e.message : e); });
+process.on("unhandledRejection", function(e) { console.error("[unhandledRejection]", e && e.message ? e.message : e); });
+client.on("error", function(e) { console.error("[webtorrent]", e && e.message ? e.message : e); });
+
 const SUBTITLE_EXTS = ["srt", "vtt", "ass", "ssa"];
 const VIDEO_EXTS = ["mp4", "mkv", "webm", "avi", "mov", "m4v", "ogv", "ogg", "ts"];
 
@@ -436,29 +440,50 @@ const server = http.createServer(function(req, res) {
     if (audioParam !== null) {
       const audioIdx = parseInt(audioParam);
       res.writeHead(200, { "Content-Type": "video/mp4" });
+      const inputStream = activeFile.createReadStream();
+      inputStream.on("error", function(e) { console.error("[audio input]", e.message); });
+      res.on("error", function(e) { console.error("[audio res]", e.message); });
       const ff = Ffmpeg()
-        .input(activeFile.createReadStream())
+        .input(inputStream)
         .inputFormat(inputFormat)
         .outputOptions(["-map 0:v:0", "-map 0:a:" + audioIdx, "-c:v copy", "-c:a aac", "-b:a 192k", "-f mp4", "-movflags frag_keyframe+empty_moov"])
-        .on("error", function(e) { console.error("[audio remux]", e.message); try { res.end(); } catch (_) {} })
+        .on("error", function(e) {
+          console.error("[audio remux]", e.message);
+          try { inputStream.destroy(); } catch (_) {}
+          try { res.end(); } catch (_) {}
+        })
         .pipe(res, { end: true });
-      req.on("close", function() { try { ff.kill("SIGKILL"); } catch (_) {} });
+      req.on("close", function() {
+        try { ff.kill("SIGKILL"); } catch (_) {}
+        try { inputStream.destroy(); } catch (_) {}
+      });
       return;
     }
 
     if (compatMode || transcodeMode || !["mp4", "m4v"].includes(ext)) {
       res.writeHead(200, { "Content-Type": "video/mp4" });
       const videoOpts = transcodeMode
-        ? ["-c:v libx264", "-preset ultrafast", "-crf 23", "-pix_fmt yuv420p", "-profile:v main", "-level 4.0"]
+        ? ["-c:v libx264", "-preset ultrafast", "-tune zerolatency", "-crf 23", "-pix_fmt yuv420p", "-profile:v main", "-level 4.1", "-vf", "scale='min(1920,iw)':-2"]
         : ["-c:v copy"];
+      const inputStream = activeFile.createReadStream();
+      inputStream.on("error", function(e) { console.error("[input stream]", e.message); });
+      res.on("error", function(e) { console.error("[res]", e.message); });
+
       const ff = Ffmpeg()
-        .input(activeFile.createReadStream())
+        .input(inputStream)
         .inputFormat(inputFormat)
         .inputOptions(["-fflags", "+genpts+discardcorrupt", "-err_detect", "ignore_err", "-analyzeduration", "10000000", "-probesize", "10000000"])
-        .outputOptions(["-map 0:v:0", "-map 0:a:0"].concat(videoOpts).concat(["-c:a aac", "-ac 2", "-b:a 192k", "-f mp4", "-movflags frag_keyframe+empty_moov+default_base_moof"]))
-        .on("error", function(e) { console.error("[compat remux]", e.message); try { res.end(); } catch (_) {} })
+        .outputOptions(["-map 0:v:0", "-map 0:a:0?"].concat(videoOpts).concat(["-c:a aac", "-ac 2", "-b:a 192k", "-f mp4", "-movflags frag_keyframe+empty_moov+default_base_moof"]))
+        .on("error", function(e) {
+          console.error("[compat remux]", e.message);
+          try { inputStream.destroy(); } catch (_) {}
+          try { res.end(); } catch (_) {}
+        })
         .pipe(res, { end: true });
-      req.on("close", function() { try { ff.kill("SIGKILL"); } catch (_) {} });
+      req.on("close", function() {
+        try { ff.kill("SIGKILL"); } catch (_) {}
+        try { inputStream.destroy(); } catch (_) {}
+      });
       return;
     }
 
